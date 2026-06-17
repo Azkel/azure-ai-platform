@@ -2,6 +2,7 @@
 AGENTS.md
 AGENTS.local.md
 .cursor/
+.githooks/
 
 # Secrets and local config
 .env
