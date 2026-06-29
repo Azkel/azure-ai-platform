@@ -1,4 +1,4 @@
-# Azure AI Platform Accelerator
+# Azure AI Platform Labs
 
 Small, practical labs exploring **Platform Engineering for AI-native systems** on Azure.
 

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in the Azure AI Platform Accelerator.
+Thanks for your interest in Azure AI Platform Labs.
 
 ---
 

@@ -208,7 +208,7 @@ Decisions for the **v1 reference implementation**. Scope and baseline alignment 
 |----------|------|
 | ADR 0001 — reference baseline & vertical slice | [docs/adrs/0001-reference-baseline-and-vertical-slice-scope.md](../../docs/adrs/0001-reference-baseline-and-vertical-slice-scope.md) |
 | AI tooling for Azure DevOps (talk repo) | [AiNowPolska-June2026](https://github.com/Azkel/AiNowPolska-June2026) |
-| Accelerator umbrella | [README](../../README.md) |
+| Labs umbrella | [README](../../README.md) |
 | Blog (when lab is demoable) | [blog.smyk.it](https://blog.smyk.it/) |
 
 ---
