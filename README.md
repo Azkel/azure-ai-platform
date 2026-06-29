@@ -12,9 +12,19 @@ Public reference and learning project — not a commercial product.
 
 Umbrella repository for **shippable labs** — build, learn, document, share. Each lab stands alone; the repo grows as learning progresses.
 
-Platform patterns first (identity, IaC, CI/CD, observability); agents and MCP are workloads on that foundation.
+Platform patterns first (identity, IaC, CI/CD, observability); agents and MCP are workloads on that foundation. Labs ship **runnable reference paths** on Azure; the portable idea is the pattern, not a mandate for those exact services.
 
-**Status:** early stage — scaffolding only; first lab not started yet.
+**Status:** early stage — [Lab 1](#labs) started; runnable artifacts land incrementally.
+
+---
+
+## Labs
+
+| Lab | Status | Description |
+|-----|--------|-------------|
+| [MCP on Azure](./labs/mcp-on-azure/) | In progress | Pattern-first reference lab — safe MCP on a platform (ingress, isolation, workload vs user identity, read-only tools). Runnable Container Apps path; concerns map to AKS, APIM, and other stacks. |
+
+More labs will appear here as they ship. Each stands alone; the repo grows with learning, not upfront scaffolding.
 
 ---
 
