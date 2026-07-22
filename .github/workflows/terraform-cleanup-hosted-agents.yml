@@ -53,7 +53,7 @@ jobs:
         tenant-id: ${{ secrets.ARM_TENANT_ID }}
         subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
         enable-OIDC: true
-        environment: 'labs'
+        environment: 'azurecloud'
 
     - name: Terraform Init
       id: init
