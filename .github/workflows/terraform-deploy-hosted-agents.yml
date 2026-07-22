@@ -36,13 +36,11 @@ on:
 # az storage container create --name state --account-name ai0labs0pl
 
 env:
-  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   TF_STATE_RESOURCE_GROUP: ${{ secrets.TF_STATE_RESOURCE_GROUP }}
   TF_STATE_STORAGE_ACCOUNT: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
   TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
   TF_STATE_KEY: "hosted-agents-${{ github.event.inputs.environment || 'dev' }}.tfstate"
+  ARM_USE_OIDC: true
 
 jobs:
   terraform:
@@ -90,7 +88,10 @@ jobs:
       if: github.event_name == 'pull_request' || github.event.inputs.action == 'plan'
       run: |
         cd labs/hosted-agents/terraform
-        terraform plan -no-color -input=false -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+        terraform plan -no-color -input=false \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}"
       continue-on-error: false
 
     - name: Terraform Apply
@@ -98,11 +99,17 @@ jobs:
       if: github.event.inputs.action == 'apply'
       run: |
         cd labs/hosted-agents/terraform
-        terraform apply -auto-approve -input=false -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+        terraform apply -auto-approve -input=false \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}"
 
     - name: Terraform Destroy
       id: destroy
       if: github.event.inputs.action == 'destroy'
       run: |
         cd labs/hosted-agents/terraform
-        terraform destroy -auto-approve -input=false -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+        terraform destroy -auto-approve -input=false \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}"
