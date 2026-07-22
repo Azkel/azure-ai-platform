@@ -1,0 +1,113 @@
+name: Terraform Deploy - Hosted Agents
+
+# GitHub Actions workflow for deploying Terraform infrastructure for Hosted Agents lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy (dev, staging, prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+        - plan
+        - apply
+        - destroy
+  pull_request:
+    branches: [ main, hosted-agents ]
+    paths:
+      - 'labs/hosted-agents/terraform/**'
+      - 'labs/shared-modules/**'
+
+# IMPORTANT: Before using this workflow, you need to set up Terraform backend storage
+# Example Azure CLI commands to create the required storage:
+# az group create --name rg-tfstate --location polandcentral
+# az storage account create --name ai0labs0pl --resource-group rg-tfstate --location polandcentral --sku Standard_LRS
+# az storage container create --name state --account-name ai0labs0pl
+
+env:
+  TF_STATE_RESOURCE_GROUP: ${{ secrets.TF_STATE_RESOURCE_GROUP }}
+  TF_STATE_STORAGE_ACCOUNT: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
+  TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
+  TF_STATE_KEY: "hosted-agents-${{ github.event.inputs.environment || 'dev' }}.tfstate"
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  ARM_USE_AZUREAD: true
+  ARM_USE_OIDC: true
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: "1.5.7"
+
+    - name: Configure Azure CLI with OIDC
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Terraform Init
+      id: init
+      run: |
+        cd labs/hosted-agents/terraform
+        terraform init \
+          -backend-config="resource_group_name=$TF_STATE_RESOURCE_GROUP" \
+          -backend-config="storage_account_name=$TF_STATE_STORAGE_ACCOUNT" \
+          -backend-config="container_name=$TF_STATE_CONTAINER" \
+          -backend-config="key=$TF_STATE_KEY"
+
+    - name: Terraform Validate
+      id: validate
+      run: |
+        cd labs/hosted-agents/terraform
+        terraform validate
+
+    - name: Terraform Plan
+      id: plan
+      if: github.event_name == 'pull_request' || github.event.inputs.action == 'plan'
+      run: |
+        cd labs/hosted-agents/terraform
+        terraform plan -no-color -input=false \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+      continue-on-error: false
+
+    - name: Terraform Apply
+      id: apply
+      if: github.event.inputs.action == 'apply'
+      run: |
+        cd labs/hosted-agents/terraform
+        terraform apply -auto-approve -input=false \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+
+    - name: Terraform Destroy
+      id: destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        cd labs/hosted-agents/terraform
+        terraform destroy -auto-approve -input=false \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
