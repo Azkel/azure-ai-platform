@@ -22,7 +22,8 @@ Platform patterns first (identity, IaC, CI/CD, observability); agents and MCP ar
 
 | Lab | Status | Description |
 |-----|--------|-------------|
-| [MCP on Azure](./labs/mcp-on-azure/) | In progress | Pattern-first reference lab — safe MCP on a platform (ingress, isolation, workload vs user identity, read-only tools). Runnable Container Apps path; concerns map to AKS, APIM, and other stacks. |
+| [Hosted Agents](./labs/hosted-agents/) | In progress | Azure AI Foundry Hosted Agents infrastructure lab — demonstrates platform foundation for AI workloads with Terraform, GitHub Actions, and Microsoft Foundry integration. |
+| [MCP on Azure](./labs/mcp-on-azure/) | On hold | Pattern-first reference lab — safe MCP on a platform (ingress, isolation, workload vs user identity, read-only tools). Runnable Container Apps path; concerns map to AKS, APIM, and other stacks. |
 
 More labs will appear here as they ship. Each stands alone; the repo grows with learning, not upfront scaffolding.
 
