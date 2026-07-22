@@ -20,3 +20,9 @@ variable "azure_tenant_id" {
   type        = string
   sensitive   = true
 }
+
+variable "azure_client_id" {
+  description = "Azure Client ID (Application ID)"
+  type        = string
+  sensitive   = true
+}

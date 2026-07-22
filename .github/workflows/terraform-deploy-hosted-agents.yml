@@ -75,7 +75,10 @@ jobs:
           -backend-config="resource_group_name=$TF_STATE_RESOURCE_GROUP" \
           -backend-config="storage_account_name=$TF_STATE_STORAGE_ACCOUNT" \
           -backend-config="container_name=$TF_STATE_CONTAINER" \
-          -backend-config="key=$TF_STATE_KEY"
+          -backend-config="key=$TF_STATE_KEY" \
+          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
 
     - name: Terraform Validate
       id: validate
@@ -91,7 +94,8 @@ jobs:
         terraform plan -no-color -input=false \
           -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
           -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}"
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
       continue-on-error: false
 
     - name: Terraform Apply
@@ -102,7 +106,8 @@ jobs:
         terraform apply -auto-approve -input=false \
           -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
           -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}"
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
 
     - name: Terraform Destroy
       id: destroy
@@ -112,4 +117,5 @@ jobs:
         terraform destroy -auto-approve -input=false \
           -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
           -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}"
+          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
+          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
