@@ -40,6 +40,10 @@ env:
   TF_STATE_STORAGE_ACCOUNT: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
   TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
   TF_STATE_KEY: "hosted-agents-${{ github.event.inputs.environment || 'dev' }}.tfstate"
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  ARM_USE_AZUREAD: true
   ARM_USE_OIDC: true
 
 jobs:
@@ -75,10 +79,7 @@ jobs:
           -backend-config="resource_group_name=$TF_STATE_RESOURCE_GROUP" \
           -backend-config="storage_account_name=$TF_STATE_STORAGE_ACCOUNT" \
           -backend-config="container_name=$TF_STATE_CONTAINER" \
-          -backend-config="key=$TF_STATE_KEY" \
-          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
-          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
+          -backend-config="key=$TF_STATE_KEY"
 
     - name: Terraform Validate
       id: validate
@@ -92,10 +93,7 @@ jobs:
       run: |
         cd labs/hosted-agents/terraform
         terraform plan -no-color -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
-          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
-          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
       continue-on-error: false
 
     - name: Terraform Apply
@@ -104,10 +102,7 @@ jobs:
       run: |
         cd labs/hosted-agents/terraform
         terraform apply -auto-approve -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
-          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
-          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
 
     - name: Terraform Destroy
       id: destroy
@@ -115,7 +110,4 @@ jobs:
       run: |
         cd labs/hosted-agents/terraform
         terraform destroy -auto-approve -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
-          -var="azure_subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          -var="azure_tenant_id=${{ secrets.AZURE_TENANT_ID }}" \
-          -var="azure_client_id=${{ secrets.AZURE_CLIENT_ID }}"
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
