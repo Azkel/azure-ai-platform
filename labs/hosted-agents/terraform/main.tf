@@ -2,6 +2,7 @@ terraform {
   backend "azurerm" {
     # Backend configuration will be provided via environment variables
     # in the GitHub Actions workflow
+    use_azuread_auth = true
   }
 }
 
