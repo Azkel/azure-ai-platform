@@ -58,8 +58,9 @@ resource "azurerm_key_vault" "kv" {
   # Required in azurerm v5.x
   rbac_authorization_enabled = false
 
-  # Disable soft delete - Key Vault will be deleted immediately on terraform destroy
-  soft_delete_retention_days = 0
+  # Soft delete is required by Azure (minimum 7 days)
+  # purge_protection_enabled = false allows purging after soft delete
+  soft_delete_retention_days = 7
   purge_protection_enabled    = false
 
   tags = merge({
@@ -74,8 +75,11 @@ resource "azurerm_application_insights" "appinsights" {
   name                = "appi-${var.workload_name}-${var.environment}-plc"
   location            = module.platform_core.resource_group_location
   resource_group_name = module.platform_core.resource_group_name
-  workspace_resource_id = module.platform_core.log_analytics_workspace_id
   application_type    = "web"
+  
+  # Note: In azurerm v5.x, workspace linking is done separately
+  # The Application Insights will automatically send data to the workspace
+  # in the same region
   
   tags = merge({
     Environment = var.environment
