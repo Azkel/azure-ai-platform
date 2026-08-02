@@ -141,9 +141,9 @@ jobs:
     - name: Set Foundry project context
       run: |
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
-        # Construct project ID from known values
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-        FOUNDRY_PROJECT_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-hosted-agents-${ENVIRONMENT}-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-${ENVIRONMENT}-plc/projects/${FOUNDRY_PROJECT_NAME}"
+        # Use hardcoded dev project ID for now (provided by user)
+        # TODO: Make dynamic for other environments
+        FOUNDRY_PROJECT_ID="/subscriptions/f17b9739-a0fe-48e5-a5e6-0d4182ebd26d/resourceGroups/rg-hosted-agents-dev-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-dev-plc/projects/hosted-agents-project"
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
         echo "Connecting to project ID: $FOUNDRY_PROJECT_ID"
         azd ai agent init --project-id "$FOUNDRY_PROJECT_ID" --no-prompt
