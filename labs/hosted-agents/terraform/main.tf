@@ -27,8 +27,14 @@ module "platform_core" {
 }
 
 # Azure Container Registry for hosted-agents workload
+# ACR names can only contain alphanumeric characters
+# Replace hyphens from workload_name (e.g., hosted-agents -> hostedagents)
+locals {
+  acr_safe_workload_name = replace(var.workload_name, "-", "")
+}
+
 resource "azurerm_container_registry" "acr" {
-  name                = "acr${var.workload_name}${var.environment}plc"
+  name                = "acr${local.acr_safe_workload_name}${var.environment}plc"
   resource_group_name = module.platform_core.resource_group_name
   location            = module.platform_core.resource_group_location
   sku                 = var.acr_sku
@@ -66,18 +72,19 @@ resource "azurerm_key_vault" "kv" {
 # Microsoft Foundry Project
 # Using azapi provider to create the project under the Foundry account
 # Resource type: Microsoft.CognitiveServices/accounts/projects
+# Note: In azapi v2.x+, body must be an HCL object, not a JSON string
 resource "azapi_resource" "foundry_project" {
   type      = "Microsoft.CognitiveServices/accounts/projects@2026-05-01"
   name      = var.foundry_project_name
   parent_id = module.platform_core.foundry_id
   location  = module.platform_core.resource_group_location
   
-  # Optional display name
-  body = jsonencode({
+  # Body as HCL object (azapi v2.x+ requires this)
+  body = {
     properties = {
       description = "Hosted Agents project for ${var.workload_name} workload"
     }
-  })
+  }
   
   tags = merge({
     Environment = var.environment

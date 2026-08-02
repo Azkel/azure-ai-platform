@@ -48,7 +48,9 @@ env:
   AGENT_NAME: "hello-world-dotnet-responses"
   FOUNDRY_PROJECT_NAME: "hosted-agents-project"
   # Calculated ACR name following Terraform pattern
-  ACR_NAME: "acr${{ env.WORKLOAD_NAME }}${{ github.event.inputs.environment }}plc"
+  # Note: ACR names can only contain alphanumeric characters
+  # workload_name has hyphens removed (hosted-agents -> hostedagents)
+  ACR_NAME: "acr${{ replace(env.WORKLOAD_NAME, '-', '') }}${{ github.event.inputs.environment }}plc"
 
 jobs:
   validate-infra:
@@ -74,8 +76,10 @@ jobs:
       id: check-acr
       run: |
         # Construct the full ACR name based on the pattern in Terraform
-        # Pattern: acr{workload}{environment}plc (e.g., acrhosted-agentsdevplc)
-        FULL_ACR_NAME="acr${{ env.WORKLOAD_NAME }}${{ github.event.inputs.environment }}plc"
+        # Pattern: acr{workload_no_hyphens}{environment}plc (e.g., acrhostedagentsdevplc)
+        # ACR names can only contain alphanumeric characters
+        SAFE_WORKLOAD="${{ replace(env.WORKLOAD_NAME, '-', '') }}"
+        FULL_ACR_NAME="acr${SAFE_WORKLOAD}${{ github.event.inputs.environment }}plc"
         echo "Checking if ACR exists: $FULL_ACR_NAME"
         
         if az acr show --name "$FULL_ACR_NAME" --output none 2>/dev/null; then
