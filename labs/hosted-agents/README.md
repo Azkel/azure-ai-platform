@@ -1,10 +1,44 @@
 # Hosted Agents Lab
 
-This lab demonstrates how to deploy infrastructure for **Azure AI Foundry Hosted Agents** using Terraform and GitHub Actions.
+This lab demonstrates how to deploy infrastructure for **Azure AI Foundry Hosted Agents** using Terraform and GitHub Actions, including a sample HelloWorld agent.
 
 ## Overview
 
-Azure AI Foundry Hosted Agents provide a managed environment for running AI workloads with built-in security, scaling, and integration with Azure AI services. This lab shows the infrastructure foundation needed to support hosted agents workloads.
+Azure AI Foundry Hosted Agents provide a managed environment for running AI workloads with built-in security, scaling, and integration with Azure AI services. This lab provides both the infrastructure foundation and a sample agent to get started quickly.
+
+## Sample: HelloWorld Hosted Agent
+
+This lab includes a **HelloWorld** sample agent that demonstrates:
+- **Bring Your Own (BYO)** approach using the **Responses protocol**
+- **C#** implementation using `.NET 10` and the `Azure.AI.AgentServer.Responses` SDK
+- **Docker** containerization for deployment to Foundry Agent Service
+- Integration with **Microsoft Foundry** models via the Responses API
+
+### Sample Location
+- **Source code**: `labs/hosted-agents/src/`
+- **Main handler**: `src/hello-world-dotnet-responses/Program.cs`
+- **Dockerfile**: `src/hello-world-dotnet-responses/Dockerfile`
+- **Project file**: `src/hello-world-dotnet-responses/HelloWorld.csproj`
+
+### Sample Features
+- Forwards user input to a Foundry model via the Responses API
+- Maintains conversation history across turns
+- Handles streaming responses with SSE (Server-Sent Events)
+- Includes built-in health endpoints (`/readiness`)
+- Automatically integrates with Application Insights for telemetry
+
+### What the Sample Does
+The HelloWorld agent:
+1. Receives a user message via the `/responses` endpoint
+2. Retrieves conversation history using `ResponseContext.GetHistoryAsync()`
+3. Constructs a prompt with the full conversation context
+4. Calls a Foundry model (e.g., `gpt-5.4-mini`) via the Responses API
+5. Returns the model's response to the user
+
+**Required Environment Variables** (auto-injected by Foundry):
+- `FOUNDRY_PROJECT_ENDPOINT` - Foundry project endpoint
+- `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (default: `gpt-5.4-mini`)
+- `APPLICATIONINSIGHTS_CONNECTION_STRING` - App Insights connection string (auto-injected)
 
 ## What This Lab Provides
 
@@ -25,11 +59,24 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 
 ## Prerequisites
 
-- Azure subscription
-- Azure CLI installed and logged in
-- GitHub repository with GitHub Actions enabled
+### Azure Tools
+- **Azure subscription**
+- **Azure CLI** installed and logged in
+- **Azure Developer CLI (`azd`)** - Required for agent deployment
+  - [Installation Guide](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
+  - Verify: `azd --version`
+- **GitHub repository** with GitHub Actions enabled
+
+### Development Tools (for local testing)
+- **.NET 10 SDK** - Required to build and run the sample locally
+  - [Download .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0)
+  - Verify: `dotnet --version`
+- **Docker** - For local container builds
+- **jq** (optional) - For pretty-printing JSON responses
 
 ## Quick Start
+
+Follow these steps to deploy the infrastructure and sample agent:
 
 ### 1. Set Up Terraform Backend
 
@@ -44,7 +91,7 @@ Before deploying, set up Azure storage for Terraform state:
 
 **With OIDC (Recommended):**
 
-Set these secrets in your GitHub repository:
+Set these secrets in your GitHub repository Settings > Secrets and variables > Actions:
 
 - `ARM_CLIENT_ID` - Azure AD Application ID
 - `ARM_SUBSCRIPTION_ID` - Azure Subscription ID
@@ -61,13 +108,30 @@ Additionally include:
 ### 3. Deploy Infrastructure
 
 **Manual Deployment:**
-1. Go to GitHub Actions
+1. Go to GitHub Actions > Workflows
 2. Run `Terraform Deploy - Hosted Agents` workflow
 3. Select environment (dev, staging, prod)
-4. Select action (plan, apply, destroy)
+4. Select action: `plan` (to review changes), then `apply` (to deploy)
 
 **Pull Request:**
-- Changes to Terraform files will automatically trigger a `terraform plan`
+- Changes to Terraform files will automatically trigger a `terraform plan` for review
+
+**Important:** The infrastructure (ACR, Foundry account with project management enabled) must be deployed before building and deploying the agent.
+
+**Note:** The Foundry Cognitive Account requires `allowProjectManagement=true` to create projects. This is automatically configured by the updated Terraform configuration. If you have existing infrastructure deployed with older configuration, you may need to:
+- Run `terraform apply` again on the updated configuration to enable project management
+- Or manually enable it via Azure CLI: `az cognitiveservices account update --name <account> --resource-group <rg> --allow-project-management true`
+
+### 4. Build and Deploy the Sample Agent
+
+After infrastructure is deployed, build and deploy the HelloWorld agent:
+
+1. Run the **Docker Build, Push and Deploy - Hosted Agents** workflow
+2. Select the same environment as your infrastructure
+3. The workflow will:
+   - Build the Docker image from the sample source
+   - Push it to Azure Container Registry
+   - Deploy it to Microsoft Foundry
 
 ## Terraform Configuration
 
@@ -106,6 +170,36 @@ module "platform_core" {
 }
 ```
 
+## CI/CD Pipeline
+
+This lab uses **GitHub Actions** for enterprise-scale CI/CD with dedicated runners (not local developer machines).
+
+### Build Pipeline
+
+The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](../../.github/workflows/docker-build-push-hosted-agents.yml)** workflow:
+
+**Workflow file**: `.github/workflows/docker-build-push-hosted-agents.yml`
+
+**What it does:**
+1. **Validates infrastructure** - Checks that ACR and Foundry project exist (must be deployed first via Terraform)
+2. **Builds Docker image** - Uses `docker/build-push-action` to build the agent image from `labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile`
+3. **Pushes to ACR** - Tags and pushes the image to Azure Container Registry with multiple tags (branch, tag, sha, latest)
+4. **Deploys to Foundry** - Uses `azd ai agent deploy` to deploy the agent to the Foundry project
+
+**Build options:**
+- **Full pipeline**: Builds, pushes, and deploys the agent
+- **Build only**: `skip-deploy: true` - Builds and pushes without deploying
+- **Deploy only**: `deploy-only: true` - Deploys an existing image (uses `latest` tag)
+
+**Naming convention:**
+- ACR name: `acr{workload_no_hyphens}{environment}plc` (e.g., `acrhostedagentsdevplc`)
+- Agent name: `hello-world-dotnet-responses`
+- Image: `{ACR}.azurecr.io/hello-world-dotnet-responses:{tag}`
+
+**References:**
+- [Set up CI/CD with Azure Developer CLI](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli)
+- [Deploy from private ACR](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry)
+
 ## Outputs
 
 After deployment, the Terraform module provides these outputs:
@@ -142,11 +236,48 @@ For production, consider:
 
 To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC via the cleanup workflow. You can also manually trigger destruction.
 
+**Important Note on Resource Deletion:**
+- **Immediately deleted**: Resource Group, VNet, Subnet
+- **7-day soft delete retention (auto-purged after 7 days)**:
+  - **Microsoft Foundry Cognitive Account**: Azure enforces a mandatory 7-day soft delete retention that cannot be disabled. After `terraform destroy`, the account will be in soft-delete state for 7 days before automatic purge.
+  - **Azure Key Vault**: Has a minimum 7-day soft delete retention (Azure requirement) with `purge_protection_enabled = false`, allowing automatic purge after 7 days.
+  - **Azure Container Registry (ACR)**: Has soft delete enabled by default with minimum 7-day retention, auto-purged after the retention period.
+  - **Application Insights**: Has Smart Detection rules that can block deletion. Terraform configuration attempts to disable this, but if issues occur:
+- **To purge immediately** (bypassing the 7-day wait):
+  ```bash
+  # Purge Cognitive Services / Foundry account
+  az cognitiveservices account purge --name cog-{workload}-{environment}-{location} --resource-group rg-{workload}-{environment}-{location} --location {location}
+  
+  # Purge Key Vault
+  az keyvault purge --name kv-{workload}-{environment}-plc --location {location}
+  
+  # Purge ACR (if needed)
+  az acr purge --name acr{workload}{environment}plc --registry acr{workload}{environment}plc.azurecr.io
+  
+  # Delete Application Insights Smart Detection rules (if blocking deletion)
+  az monitor app-insights smart-detection list --resource-group rg-{workload}-{environment}-plc --app appi-{workload}-{environment}-plc | jq -r '.[] | .name' | xargs -I {} az monitor app-insights smart-detection delete --resource-group rg-{workload}-{environment}-plc --app appi-{workload}-{environment}-plc --name {}
+  ```
+- Consider adding a post-destroy cleanup step in your workflow to purge soft-deleted resources
+
 ## References
 
+### Microsoft Foundry
 - [Azure AI Foundry Hosted Agents](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents#platform-details)
+- [Hosted Agents Overview](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents)
+- [Deploy Hosted Agent from Private ACR](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry)
+- [Set up CI/CD with Azure Developer CLI](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli)
+
+### Azure Developer CLI
+- [Install Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
+- [Azure Developer CLI Documentation](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/)
+
+### Infrastructure as Code
 - [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest)
 - [Azure Cognitive Services](https://learn.microsoft.com/en-us/azure/cognitive-services/)
+
+### .NET Development
+- [.NET 10 Download](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [Azure.AI.AgentServer.Responses SDK](https://www.nuget.org/packages/Azure.AI.AgentServer.Responses)
 
 ## Testing and Validation
 

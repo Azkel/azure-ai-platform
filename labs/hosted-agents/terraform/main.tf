@@ -40,6 +40,9 @@ resource "azurerm_container_registry" "acr" {
   sku                 = var.acr_sku
   admin_enabled       = var.acr_admin_enabled
 
+  # Note: ACR has soft delete enabled by default with minimum 7-day retention
+  # This cannot be disabled, but resources are auto-purged after the retention period
+
   tags = merge({
     Environment = var.environment
     Workload    = var.workload_name
@@ -86,6 +89,10 @@ resource "azurerm_role_assignment" "kv_admin" {
 # Using azapi provider to create the project under the Foundry account
 # Resource type: Microsoft.CognitiveServices/accounts/projects
 # Note: In azapi v2.x+, body must be an HCL object, not a JSON string
+# 
+# IMPORTANT: This resource depends on the platform_core module having completed
+# the azapi_update_resource.foundry_enable_projects which sets allowProjectManagement=true
+# on the Foundry account. The explicit depends_on ensures proper ordering.
 resource "azapi_resource" "foundry_project" {
   type      = "Microsoft.CognitiveServices/accounts/projects@2026-05-01"
   name      = var.foundry_project_name
@@ -107,6 +114,12 @@ resource "azapi_resource" "foundry_project" {
   # Disable schema validation to allow newer API versions
   # The azapi provider may have stricter validation than the Azure API itself
   schema_validation_enabled = false
+  
+  # Ensure the platform_core module's allowProjectManagement update completes first
+  # This is necessary because the Foundry account must have allowProjectManagement=true
+  # before projects can be created under it
+  # We reference the output that depends on the azapi_update_resource
+  depends_on = [module.platform_core.foundry_project_management_enabled]
 }
 
 # Output the core resources that will be used by other modules
