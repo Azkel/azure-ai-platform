@@ -176,12 +176,10 @@ output "key_vault_uri" {
 }
 
 # Microsoft Foundry Project outputs
-# The project endpoint is constructed from the project ID
+# The project endpoint is constructed from the account endpoint
 # Format: {foundry_account_endpoint}/projects/{project_name}
 locals {
-  # Extract the account endpoint from the parent Foundry account
-  foundry_account_endpoint = replace(module.platform_core.foundry_endpoint, "/\$\/.+$", "")
-  foundry_project_endpoint = "${local.foundry_account_endpoint}/projects/${var.foundry_project_name}"
+  foundry_project_endpoint = "${module.platform_core.foundry_endpoint}/projects/${var.foundry_project_name}"
 }
 
 output "foundry_project_id" {
