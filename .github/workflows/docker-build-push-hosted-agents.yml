@@ -203,6 +203,7 @@ jobs:
         cd labs/hosted-agents/src
         # Create backup and update azure.yaml with image field
         cp azure.yaml azure.yaml.bak
+        pip install pyyaml -q 2>/dev/null || true
         python3 << EOF
 import yaml
 import os
