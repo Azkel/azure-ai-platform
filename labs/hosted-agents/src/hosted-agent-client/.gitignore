@@ -1,0 +1,17 @@
+# .NET
+bin/
+obj/
+
+# User secrets
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+
+# Test results
+TestResults/
