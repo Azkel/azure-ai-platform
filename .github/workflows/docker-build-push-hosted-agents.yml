@@ -151,7 +151,7 @@ jobs:
           type=ref,event=branch
           type=ref,event=tag
           type=sha
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=latest,enable={{eq github.ref_name github.event.repository.default_branch}}
 
     - name: Build and push Docker image
       if: github.event.inputs.deploy-only == 'false'
@@ -187,16 +187,10 @@ jobs:
         IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
         echo "Deploying image: $IMAGE_REF"
         
-        # Use azd to deploy the agent
-        # --no-prompt: Required for CI
-        # --image: Use the pre-built image
-        azd ai agent deploy \
-          --name ${{ env.AGENT_NAME }} \
-          --image "$IMAGE_REF" \
-          --protocol responses \
-          --protocol-version 2.0.0 \
-          --cpu 0.5 \
-          --memory 1Gi \
-          --set AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.4-mini \
+        # Deploy the agent from pre-built image using azd
+        # Deploy only the agent service from the directory containing azure.yaml
+        cd labs/hosted-agents/src
+        azd deploy ${{ env.AGENT_NAME }} \
+          --from-package "$IMAGE_REF" \
           --no-prompt \
           --output json
