@@ -48,3 +48,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "foundry_project_name" {
+  description = "The name of the Microsoft Foundry project for hosted agent deployment"
+  type        = string
+  default     = "hosted-agents-project"
+}

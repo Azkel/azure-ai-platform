@@ -152,3 +152,18 @@ output "key_vault_uri" {
   description = "The URI of the Azure Key Vault"
   value       = azurerm_key_vault.kv.vault_uri
 }
+
+# Calculated Microsoft Foundry project endpoint
+# Format: {foundry_account_endpoint}/projects/{project_name}
+# Note: The Foundry account endpoint is sensitive, so we construct the project endpoint from the account name
+locals {
+  # Extract the account name from the foundry endpoint
+  # The endpoint format is: https://{account-name}.services.ai.azure.com
+  foundry_account_name = replace(module.platform_core.foundry_endpoint, "/https:\/\/(.+?)\.services\.ai\.azure\.com.*/", "$1")
+  foundry_project_endpoint = "https://${local.foundry_account_name}.services.ai.azure.com/api/projects/${var.foundry_project_name}"
+}
+
+output "foundry_project_endpoint" {
+  description = "The calculated endpoint of the Microsoft Foundry project"
+  value       = local.foundry_project_endpoint
+}

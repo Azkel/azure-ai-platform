@@ -7,7 +7,9 @@ name: Docker Build, Push and Deploy - Hosted Agents
 # If ACR doesn't exist, run the "Terraform Deploy - Hosted Agents" workflow first.
 #
 # For hosted agent deployment, a Foundry project must exist.
-# Create it via Azure Portal or Azure Developer CLI before running this workflow.
+# The project endpoint is calculated from the Terraform naming convention:
+#   Foundry account: cog-{workload}-{environment}-plc
+#   Project endpoint: https://cog-{workload}-{environment}-plc.services.ai.azure.com/api/projects/{project_name}
 
 on:
   workflow_dispatch:
@@ -33,6 +35,7 @@ env:
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   WORKLOAD_NAME: "hosted-agents"
   AGENT_NAME: "hello-world-dotnet-responses"
+  FOUNDRY_PROJECT_NAME: "hosted-agents-project"
 
 jobs:
   build-and-push:
@@ -140,18 +143,14 @@ jobs:
         # Construct the image reference
         IMAGE_REF="${{ steps.check-acr.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
         
-        # Get Foundry project endpoint from secret
-        # Format: https://{account}.services.ai.azure.com/api/projects/{project}
-        FOUNDRY_PROJECT_ENDPOINT="${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"
+        # Calculate Foundry project endpoint from naming convention
+        # Foundry account name follows pattern: cog-{workload}-{environment}-plc
+        # Project endpoint: https://{account}.services.ai.azure.com/api/projects/{project}
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        FOUNDRY_ACCOUNT_NAME="cog-${{ env.WORKLOAD_NAME }}-$ENVIRONMENT-plc"
+        FOUNDRY_PROJECT_ENDPOINT="https://${FOUNDRY_ACCOUNT_NAME}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
         
-        if [ -z "$FOUNDRY_PROJECT_ENDPOINT" ]; then
-          echo "::error::FOUNDRY_PROJECT_ENDPOINT secret is not configured."
-          echo "Please set the FOUNDRY_PROJECT_ENDPOINT secret in GitHub repository settings."
-          echo "It should be in the format: https://{account}.services.ai.azure.com/api/projects/{project}"
-          exit 1
-        fi
-        
-        # Extract API version from endpoint if not present
+        # Add API version if not present
         API_VERSION="v1"
         if [[ "$FOUNDRY_PROJECT_ENDPOINT" != *"api-version="* ]]; then
           FOUNDRY_PROJECT_ENDPOINT="$FOUNDRY_PROJECT_ENDPOINT?api-version=$API_VERSION"
