@@ -54,3 +54,9 @@ variable "foundry_project_name" {
   type        = string
   default     = "hosted-agents-project"
 }
+
+variable "additional_foundry_user_principal_ids" {
+  description = "Extra Entra object IDs granted Foundry User on the Foundry account for agent invoke."
+  type        = list(string)
+  default     = []
+}

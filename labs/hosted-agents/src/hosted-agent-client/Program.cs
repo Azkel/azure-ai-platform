@@ -30,6 +30,13 @@ class Program
         return token;
     }
 
+    static string Truncate(string value, int max)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= max)
+            return value;
+        return value[..max] + "...";
+    }
+
     static async Task<JsonDocument> CallAgent(string endpoint, string msg)
     {
         var t = await GetToken();
@@ -44,8 +51,15 @@ class Program
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", t);
         var resp = await http.SendAsync(request);
-        resp.EnsureSuccessStatusCode();
-        return JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var body = await resp.Content.ReadAsStringAsync();
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"Response status code does not indicate success: {(int)resp.StatusCode} ({resp.StatusCode}).\n  Body: {Truncate(body, 800)}",
+                null,
+                resp.StatusCode);
+        }
+        return JsonDocument.Parse(body);
     }
 
     static string ExtractResponseText(JsonDocument d)
@@ -258,8 +272,9 @@ class Program
                     Console.ResetColor();
                     Console.WriteLine("\nPlease check:");
                     Console.WriteLine("  - Your Azure authentication (run 'az login')");
-                    Console.WriteLine("  - The endpoint URL is correct");
+                    Console.WriteLine("  - The endpoint URL is correct (services.ai.azure.com/api/projects/...)");
                     Console.WriteLine("  - The agent is deployed and running");
+                    Console.WriteLine("  - You have Foundry User on the Foundry account (Owner alone is not enough)");
                     Console.WriteLine("\nType 'exit' to quit, or continue chatting.");
                 }
                 catch (Exception ex)

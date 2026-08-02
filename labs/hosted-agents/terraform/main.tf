@@ -14,16 +14,18 @@ module "platform_core" {
   environment   = var.environment
 
   # VNet configuration
-  vnet_address_space      = ["10.1.0.0/16"]
-  subnet_address_prefixes = ["10.1.1.0/24"]
+  # Poland Central does not support Class A (10.x) for Agent Service; use 172.16/16.
+  vnet_address_space      = ["172.16.0.0/16"]
+  subnet_address_prefixes = ["172.16.1.0/24"]
 
   # Log Analytics configuration
   log_analytics_sku               = "PerGB2018"
   log_analytics_retention_in_days = 30 # Cost-optimized for labs
 
   # Microsoft Foundry configuration
-  foundry_sku = "S0" # Cost-optimized for labs; use F0 or higher for production
-
+  foundry_sku                                = "S0" # Cost-optimized for labs; use F0 or higher for production
+  additional_foundry_user_principal_ids      = var.additional_foundry_user_principal_ids
+  foundry_agent_network_injection_enabled    = true
 }
 
 # Azure Container Registry for hosted-agents workload
@@ -146,6 +148,27 @@ resource "azapi_resource" "foundry_project" {
 
 locals {
   foundry_project_principal_id = azapi_resource.foundry_project.output.identity.principalId
+}
+
+# Account-level Agents capability host is auto-created when the Foundry account
+# is provisioned with network_injection.scenario=agent (name like
+# "{account}@aml_aiagentservice"). Do not create a second account host.
+
+# Project-level Agents capability host (required for agent runtime routing).
+# Must NOT include customerSubnet (API rejects subnet at project scope).
+resource "azapi_resource" "foundry_project_capability_host" {
+  type                      = "Microsoft.CognitiveServices/accounts/projects/capabilityHosts@2025-06-01"
+  name                      = "caphost"
+  parent_id                 = azapi_resource.foundry_project.id
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      capabilityHostKind = "Agents"
+    }
+  }
+
+  depends_on = [azapi_resource.foundry_project]
 }
 
 # Project MI pulls the hosted-agent image from ACR at deploy/runtime.

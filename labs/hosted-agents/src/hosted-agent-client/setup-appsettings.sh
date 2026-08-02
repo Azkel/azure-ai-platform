@@ -70,21 +70,30 @@ fi
 echo "Searching for Microsoft Foundry resource..."
 
 # First, try to find the specific dev Foundry resource by name
-FOUNDRY_ACCOUNT=$(az cognitiveservices account show --name "$FOUNDRY_NAME" --query "{name:name, endpoint:properties.endpoint}" 2>/dev/null || true)
+FOUNDRY_ACCOUNT=$(az cognitiveservices account show \
+  --name "$FOUNDRY_NAME" \
+  --query "{name:name, endpoint:properties.endpoint, customSubDomainName:properties.customSubDomainName}" \
+  2>/dev/null || true)
 
 if [[ -z "$FOUNDRY_ACCOUNT" || "$FOUNDRY_ACCOUNT" == "null" ]]; then
     # Try to find a Foundry-enabled Cognitive Services account by name pattern
-    FOUNDRY_ACCOUNT=$(az cognitiveservices account list --query "[?contains(name,'$FOUNDRY_NAME')].{name:name, endpoint:properties.endpoint} | [0]" 2>/dev/null || true)
+    FOUNDRY_ACCOUNT=$(az cognitiveservices account list \
+      --query "[?contains(name,'$FOUNDRY_NAME')].{name:name, endpoint:properties.endpoint, customSubDomainName:properties.customSubDomainName} | [0]" \
+      2>/dev/null || true)
 fi
 
 if [[ -z "$FOUNDRY_ACCOUNT" || "$FOUNDRY_ACCOUNT" == "null" ]]; then
     # Try to find a Foundry-enabled Cognitive Services account
-    FOUNDRY_ACCOUNT=$(az cognitiveservices account list --query "[?kind=='Microsoft.CognitiveServices/accounts' && contains(properties.customSubDomainName,'foundry')].{name:name, endpoint:properties.endpoint} | [0]" 2>/dev/null || true)
+    FOUNDRY_ACCOUNT=$(az cognitiveservices account list \
+      --query "[?kind=='AIServices'].{name:name, endpoint:properties.endpoint, customSubDomainName:properties.customSubDomainName} | [0]" \
+      2>/dev/null || true)
 fi
 
 if [[ -z "$FOUNDRY_ACCOUNT" || "$FOUNDRY_ACCOUNT" == "null" ]]; then
     # Try alternative query - look for any Cognitive Services account
-    FOUNDRY_ACCOUNT=$(az cognitiveservices account list --query "[0].{name:name, endpoint:properties.endpoint}" 2>/dev/null || true)
+    FOUNDRY_ACCOUNT=$(az cognitiveservices account list \
+      --query "[0].{name:name, endpoint:properties.endpoint, customSubDomainName:properties.customSubDomainName}" \
+      2>/dev/null || true)
 fi
 
 if [[ -z "$FOUNDRY_ACCOUNT" || "$FOUNDRY_ACCOUNT" == "null" ]]; then
@@ -95,22 +104,21 @@ if [[ -z "$FOUNDRY_ACCOUNT" || "$FOUNDRY_ACCOUNT" == "null" ]]; then
     exit 1
 fi
 
-# Extract the account endpoint
-FOUNDRY_ENDPOINT=$(echo "$FOUNDRY_ACCOUNT" | jq -r '.endpoint' 2>/dev/null || echo "")
+ACCOUNT_ENDPOINT=$(echo "$FOUNDRY_ACCOUNT" | jq -r '.endpoint // empty' 2>/dev/null || echo "")
+SUBDOMAIN=$(echo "$FOUNDRY_ACCOUNT" | jq -r '.customSubDomainName // empty' 2>/dev/null || echo "")
 
-if [[ -z "$FOUNDRY_ENDPOINT" ]]; then
-    echo "Error: Could not extract endpoint from Foundry resource."
+if [[ -z "$SUBDOMAIN" || "$SUBDOMAIN" == "null" ]]; then
+    echo "Error: Could not extract customSubDomainName from Foundry resource."
     echo "Resource info: $FOUNDRY_ACCOUNT"
     exit 1
 fi
 
-# Ensure the endpoint doesn't have a trailing slash
-FOUNDRY_ENDPOINT=$(echo "$FOUNDRY_ENDPOINT" | sed 's/\/$//')
+# Hosted agent APIs use services.ai.azure.com/api/projects/{name}
+# (not cognitiveservices.azure.com/projects/...).
+PROJECT_ENDPOINT="https://${SUBDOMAIN}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
 
-# Construct the project endpoint
-PROJECT_ENDPOINT="${FOUNDRY_ENDPOINT}/projects/${PROJECT_NAME}"
-
-echo "Foundry account endpoint: ${FOUNDRY_ENDPOINT}"
+echo "Foundry account endpoint: ${ACCOUNT_ENDPOINT}"
+echo "Custom subdomain: ${SUBDOMAIN}"
 echo "Project endpoint: ${PROJECT_ENDPOINT}"
 echo ""
 

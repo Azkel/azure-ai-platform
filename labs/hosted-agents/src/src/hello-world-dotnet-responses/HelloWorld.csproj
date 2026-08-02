@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,6 +8,7 @@
          [Experimental] in the OpenAI .NET SDK. Suppress the diagnostic project-wide
          since we intentionally depend on the Responses API. -->
     <NoWarn>$(NoWarn);OPENAI001</NoWarn>
+    <UserSecretsId>7cf801e8-5c19-45f9-9b20-568372c74006</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

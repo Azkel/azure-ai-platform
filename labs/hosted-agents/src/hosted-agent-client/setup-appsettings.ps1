@@ -55,22 +55,24 @@ try {
 Write-Host "Searching for Microsoft Foundry resource..."
 
 try {
+    $query = "{name:name, endpoint:properties.endpoint, customSubDomainName:properties.customSubDomainName}"
+
     # First, try to find the specific dev Foundry resource by name
-    $foundryAccount = az cognitiveservices account show --name $FoundryName --query "{name:name, endpoint:properties.endpoint}" 2>$null
+    $foundryAccount = az cognitiveservices account show --name $FoundryName --query $query 2>$null
     
     if (-not $foundryAccount -or $foundryAccount -eq "null") {
         # Try to find by name pattern
-        $foundryAccount = az cognitiveservices account list --query "[?contains(name,'$FoundryName')].{name:name, endpoint:properties.endpoint} | [0]" 2>$null
+        $foundryAccount = az cognitiveservices account list --query "[?contains(name,'$FoundryName')].$query | [0]" 2>$null
     }
     
     if (-not $foundryAccount -or $foundryAccount -eq "null") {
-        # Try to find a Foundry-enabled Cognitive Services account
-        $foundryAccount = az cognitiveservices account list --query "[?kind=='Microsoft.CognitiveServices/accounts' && contains(properties.customSubDomainName,'foundry')].{name:name, endpoint:properties.endpoint} | [0]" 2>$null
+        # Try to find an AIServices account
+        $foundryAccount = az cognitiveservices account list --query "[?kind=='AIServices'].$query | [0]" 2>$null
     }
     
     if (-not $foundryAccount -or $foundryAccount -eq "null") {
         # Try alternative query - look for any Cognitive Services account
-        $foundryAccount = az cognitiveservices account list --query "[0].{name:name, endpoint:properties.endpoint}" 2>$null
+        $foundryAccount = az cognitiveservices account list --query "[0].$query" 2>$null
     }
     
     if (-not $foundryAccount -or $foundryAccount -eq "null") {
@@ -78,28 +80,29 @@ try {
         exit 1
     }
     
-    # Parse the JSON response
+    $subdomain = $null
+    $accountEndpoint = $null
+    if ($foundryAccount -match '"customSubDomainName":\s*"([^"]+)"') {
+        $subdomain = $matches[1]
+    }
     if ($foundryAccount -match '"endpoint":\s*"([^"]+)"') {
-        $foundryEndpoint = $matches[1]
-    } elseif ($foundryAccount -match '"endpoint":\s*([^\s,]+)') {
-        $foundryEndpoint = $matches[1].Trim('"')
-    } else {
-        # Try using jq if available
-        $foundryEndpoint = az cognitiveservices account list --query "[0].properties.endpoint" -o tsv 2>$null
-        if (-not $foundryEndpoint) {
-            Write-Error "Could not extract endpoint from Foundry resource."
-            Write-Host "Resource info: $foundryAccount"
-            exit 1
-        }
+        $accountEndpoint = $matches[1]
+    }
+
+    if (-not $subdomain) {
+        $subdomain = az cognitiveservices account show --name $FoundryName --query properties.customSubDomainName -o tsv 2>$null
+    }
+    if (-not $subdomain) {
+        Write-Error "Could not extract customSubDomainName from Foundry resource."
+        Write-Host "Resource info: $foundryAccount"
+        exit 1
     }
     
-    # Ensure the endpoint doesn't have a trailing slash
-    $foundryEndpoint = $foundryEndpoint.TrimEnd('/')
+    # Hosted agent APIs use services.ai.azure.com/api/projects/{name}
+    $projectEndpoint = "https://$subdomain.services.ai.azure.com/api/projects/$ProjectName"
     
-    # Construct the project endpoint
-    $projectEndpoint = "$foundryEndpoint/projects/$ProjectName"
-    
-    Write-Host "Foundry account endpoint: $foundryEndpoint"
+    Write-Host "Foundry account endpoint: $accountEndpoint"
+    Write-Host "Custom subdomain: $subdomain"
     Write-Host "Project endpoint: $projectEndpoint"
     Write-Host ""
     
