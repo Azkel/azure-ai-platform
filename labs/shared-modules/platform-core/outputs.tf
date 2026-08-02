@@ -93,3 +93,8 @@ output "foundry_user_role_assignment_id" {
   value       = azurerm_role_assignment.foundry_user.id
 }
 
+output "foundry_principal_id" {
+  description = "The principal ID of the Microsoft Foundry account system-assigned managed identity"
+  value       = azurerm_cognitive_account.foundry.identity[0].principal_id
+}
+

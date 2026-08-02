@@ -62,14 +62,14 @@ resource "azurerm_key_vault" "kv" {
   enabled_for_disk_encryption = true
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   sku_name                    = var.key_vault_sku
-  
+
   # Use Azure RBAC for authorization (simpler for labs where infra is recreated often)
   rbac_authorization_enabled = true
 
   # Soft delete is required by Azure (minimum 7 days)
   # purge_protection_enabled = false allows purging after soft delete
   soft_delete_retention_days = 7
-  purge_protection_enabled    = false
+  purge_protection_enabled   = false
 
   tags = merge({
     Environment = var.environment
@@ -85,6 +85,24 @@ resource "azurerm_role_assignment" "kv_admin" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+# App Insights connection string as a Key Vault secret (source of truth for agents).
+# Hosted agents resolve it at deploy time into APPLICATIONINSIGHTS_CONNECTION_STRING
+# rather than baking it into the image or azure.yaml.
+resource "azurerm_key_vault_secret" "appinsights_connection_string" {
+  name         = "applicationinsights-connection-string"
+  value        = module.platform_core.application_insights_connection_string
+  key_vault_id = azurerm_key_vault.kv.id
+  content_type = "text/plain"
+
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+    Purpose     = "app-insights"
+  }, var.tags)
+
+  depends_on = [azurerm_role_assignment.kv_admin]
+}
+
 # Microsoft Foundry Project
 # Using azapi provider to create the project under the Foundry account
 # Resource type: Microsoft.CognitiveServices/accounts/projects
@@ -98,7 +116,7 @@ resource "azapi_resource" "foundry_project" {
   name      = var.foundry_project_name
   parent_id = module.platform_core.foundry_id
   location  = module.platform_core.resource_group_location
-  
+
   # Body as HCL object (azapi v2.x+ requires this)
   # Projects require a managed identity (SystemAssigned) per Foundry API
   body = {
@@ -109,18 +127,67 @@ resource "azapi_resource" "foundry_project" {
       description = "Hosted Agents project for ${var.workload_name} workload"
     }
   }
-  
+
   tags = merge({
     Environment = var.environment
     Workload    = var.workload_name
   }, var.tags)
-  
+
   # Disable schema validation to allow newer API versions
   # The azapi provider may have stricter validation than the Azure API itself
   schema_validation_enabled = false
 
+  # Export identity so we can grant ACR pull to the project MI
+  response_export_values = ["identity"]
+
   # Ensure Foundry User role is assigned before creating projects
   depends_on = [module.platform_core.foundry_user_role_assignment_id]
+}
+
+locals {
+  foundry_project_principal_id = azapi_resource.foundry_project.output.identity.principalId
+}
+
+# Project MI pulls the hosted-agent image from ACR at deploy/runtime.
+# Prefer Repository Reader (data plane); also grant AcrPull for registries
+# still on classic RBAC mode.
+resource "azurerm_role_assignment" "foundry_project_acr_pull" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = local.foundry_project_principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_project_acr_repo_reader" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "Container Registry Repository Reader"
+  principal_id         = local.foundry_project_principal_id
+}
+
+# Account MI is also observed to participate in hosted-agent image pulls.
+resource "azurerm_role_assignment" "foundry_account_acr_pull" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = module.platform_core.foundry_principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_account_acr_repo_reader" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "Container Registry Repository Reader"
+  principal_id         = module.platform_core.foundry_principal_id
+}
+
+# Foundry identities need Key Vault Secrets User to read the App Insights
+# connection string (and any future agent secrets stored in this vault).
+resource "azurerm_role_assignment" "foundry_project_kv_secrets_user" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = local.foundry_project_principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_account_kv_secrets_user" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.platform_core.foundry_principal_id
 }
 
 # Output the core resources that will be used by other modules
@@ -199,6 +266,17 @@ output "key_vault_name" {
 output "key_vault_uri" {
   description = "The URI of the Azure Key Vault"
   value       = azurerm_key_vault.kv.vault_uri
+}
+
+output "appinsights_connection_string_secret_name" {
+  description = "Key Vault secret name for the Application Insights connection string"
+  value       = azurerm_key_vault_secret.appinsights_connection_string.name
+}
+
+output "appinsights_connection_string_secret_id" {
+  description = "Key Vault secret resource ID for the Application Insights connection string"
+  value       = azurerm_key_vault_secret.appinsights_connection_string.id
+  sensitive   = true
 }
 
 # Application Insights outputs (from platform-core module)
