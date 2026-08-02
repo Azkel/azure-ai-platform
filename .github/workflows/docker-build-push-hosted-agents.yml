@@ -129,6 +129,14 @@ jobs:
     - name: Install Foundry extensions
       run: azd ext install microsoft.foundry --no-prompt
 
+    - name: Authenticate Azure Developer CLI
+      run: |
+        azd auth login \
+          --client-id ${{ env.AZURE_CLIENT_ID }} \
+          --federated-credential-provider github \
+          --tenant-id ${{ env.AZURE_TENANT_ID }} \
+          --no-prompt
+
     - name: Set Foundry project context
       run: |
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
