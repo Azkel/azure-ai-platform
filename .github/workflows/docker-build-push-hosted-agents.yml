@@ -59,6 +59,7 @@ jobs:
       acr_exists: ${{ steps.check-acr.outputs.acr_exists }}
       acr_name: ${{ steps.check-acr.outputs.acr_name }}
       foundry_project_endpoint: ${{ steps.get-endpoint.outputs.foundry_project_endpoint }}
+      foundry_project_id: ${{ steps.get-endpoint.outputs.foundry_project_id }}
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -90,16 +91,20 @@ jobs:
           exit 1
         fi
 
-    - name: Get Foundry project endpoint
+    - name: Get Foundry project endpoint and ID
       id: get-endpoint
       run: |
-        # Calculate Foundry project endpoint from Terraform naming convention
+        # Calculate Foundry project endpoint and ID from Terraform naming convention
         # Foundry account: cog-{workload}-{environment}-plc
+        # Resource group: rg-{workload}-{environment}-plc
         # Project endpoint: https://cog-{workload}-{environment}-plc.services.ai.azure.com/api/projects/{project_name}
         ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
         FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-$ENVIRONMENT-plc"
+        RESOURCE_GROUP_NAME="rg-hosted-agents-$ENVIRONMENT-plc"
         FOUNDRY_PROJECT_ENDPOINT="https://${FOUNDRY_ACCOUNT_NAME}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        FOUNDRY_PROJECT_ID="/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.CognitiveServices/accounts/${FOUNDRY_ACCOUNT_NAME}/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
         echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
+        echo "foundry_project_id=$FOUNDRY_PROJECT_ID" >> $GITHUB_OUTPUT
 
   build-and-deploy:
     name: Build, Push and Deploy
@@ -140,8 +145,11 @@ jobs:
     - name: Set Foundry project context
       run: |
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
+        FOUNDRY_PROJECT_ID="${{ needs.validate-infra.outputs.foundry_project_id }}"
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
+        echo "Setting Foundry project ID: $FOUNDRY_PROJECT_ID"
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
+        echo "AZURE_AI_PROJECT_ID=$FOUNDRY_PROJECT_ID" >> $GITHUB_ENV
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
