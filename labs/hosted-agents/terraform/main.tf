@@ -100,7 +100,11 @@ resource "azapi_resource" "foundry_project" {
   location  = module.platform_core.resource_group_location
   
   # Body as HCL object (azapi v2.x+ requires this)
+  # Projects require a managed identity (SystemAssigned) per Foundry API
   body = {
+    identity = {
+      type = "SystemAssigned"
+    }
     properties = {
       description = "Hosted Agents project for ${var.workload_name} workload"
     }
