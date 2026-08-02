@@ -40,6 +40,41 @@ resource "azurerm_container_registry" "acr" {
   }, var.tags)
 }
 
+# Azure Key Vault for secrets and configuration
+resource "azurerm_key_vault" "kv" {
+  name                        = "kv-${var.workload_name}-${var.environment}-plc"
+  location                    = module.platform_core.resource_group_location
+  resource_group_name         = module.platform_core.resource_group_name
+  enabled_for_disk_encryption = true
+  tenant_id                   = data.azurerm_client_config.current.tenant_id
+  sku_name                    = var.key_vault_sku
+
+  # Enable soft delete and purge protection for production
+  # For labs, we can keep it minimal
+  soft_delete_retention_days = 7
+  purge_protection_enabled    = false
+
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+  }, var.tags)
+}
+
+# Get current Azure client configuration for Key Vault
+# This needs to be accessed before the Key Vault resource
+data "azurerm_client_config" "current" {}
+
+# Access policy for the current user to manage Key Vault
+resource "azurerm_key_vault_access_policy" "admin" {
+  key_vault_id = azurerm_key_vault.kv.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id
+
+  key_permissions    = ["Get", "List", "Create", "Delete", "Recover", "Purge"]
+  secret_permissions = ["Get", "List", "Set", "Delete", "Recover", "Purge"]
+  certificate_permissions = ["Get", "List", "Create", "Delete", "Recover", "Purge"]
+}
+
 # Output the core resources that will be used by other modules
 output "resource_group_name" {
   value = module.platform_core.resource_group_name
@@ -100,4 +135,20 @@ output "container_registry_admin_password" {
   description = "The admin password of the Azure Container Registry"
   value       = azurerm_container_registry.acr.admin_password
   sensitive   = true
+}
+
+# Azure Key Vault outputs
+output "key_vault_id" {
+  description = "The ID of the Azure Key Vault"
+  value       = azurerm_key_vault.kv.id
+}
+
+output "key_vault_name" {
+  description = "The name of the Azure Key Vault"
+  value       = azurerm_key_vault.kv.name
+}
+
+output "key_vault_uri" {
+  description = "The URI of the Azure Key Vault"
+  value       = azurerm_key_vault.kv.vault_uri
 }

@@ -1,10 +1,13 @@
-name: Docker Build and Push - Hosted Agents
+name: Docker Build, Push and Deploy - Hosted Agents
 
-# GitHub Actions workflow for building and pushing Docker image to Azure Container Registry
-# for the HelloWorld hosted agent sample.
+# GitHub Actions workflow for building, pushing Docker image to Azure Container Registry,
+# and deploying the HelloWorld hosted agent sample.
 #
 # This workflow assumes the Azure Container Registry has been created by Terraform.
 # If ACR doesn't exist, run the "Terraform Deploy - Hosted Agents" workflow first.
+#
+# For hosted agent deployment, a Foundry project must exist.
+# Create it via Azure Portal or Azure Developer CLI before running this workflow.
 
 on:
   workflow_dispatch:
@@ -18,12 +21,18 @@ on:
         - dev
         - staging
         - prod
+      skip-deploy:
+        description: 'Skip hosted agent deployment (build and push only)'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   WORKLOAD_NAME: "hosted-agents"
+  AGENT_NAME: "hello-world-dotnet-responses"
 
 jobs:
   build-and-push:
@@ -97,3 +106,118 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Get Azure access token for Foundry API
+      if: steps.check-acr.outputs.acr_exists == 'true' && github.event.inputs.skip-deploy == 'false'
+      id: get-token
+      run: |
+        # Get access token for Foundry API (resource: https://ai.azure.com)
+        TOKEN=$(az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv)
+        echo "::add-mask::$TOKEN"
+        echo "foundry_token=$TOKEN" >> $GITHUB_OUTPUT
+
+    - name: Get image tag for deployment
+      if: steps.check-acr.outputs.acr_exists == 'true' && github.event.inputs.skip-deploy == 'false'
+      id: get-tag
+      run: |
+        # Get the first tag from meta output
+        # The tags are in the format: registry/repo:tag1,registry/repo:tag2
+        TAGS="${{ steps.meta.outputs.tags }}"
+        # Extract the last tag (which should be the most specific one)
+        # For example: acrhostedagentsdevplc.azurecr.io/hello-world-dotnet-responses:sha-abc123,acr...:latest
+        # We want the sha tag
+        IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+        LAST_TAG=${TAG_ARRAY[-1]}
+        # Extract just the tag part after :
+        TAG=${LAST_TAG#*:}
+        echo "Using tag: $TAG"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Deploy hosted agent to Foundry
+      if: steps.check-acr.outputs.acr_exists == 'true' && github.event.inputs.skip-deploy == 'false'
+      id: deploy-agent
+      run: |
+        # Construct the image reference
+        IMAGE_REF="${{ steps.check-acr.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
+        
+        # Get Foundry project endpoint from secret
+        # Format: https://{account}.services.ai.azure.com/api/projects/{project}
+        FOUNDRY_PROJECT_ENDPOINT="${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"
+        
+        if [ -z "$FOUNDRY_PROJECT_ENDPOINT" ]; then
+          echo "::error::FOUNDRY_PROJECT_ENDPOINT secret is not configured."
+          echo "Please set the FOUNDRY_PROJECT_ENDPOINT secret in GitHub repository settings."
+          echo "It should be in the format: https://{account}.services.ai.azure.com/api/projects/{project}"
+          exit 1
+        fi
+        
+        # Extract API version from endpoint if not present
+        API_VERSION="v1"
+        if [[ "$FOUNDRY_PROJECT_ENDPOINT" != *"api-version="* ]]; then
+          FOUNDRY_PROJECT_ENDPOINT="$FOUNDRY_PROJECT_ENDPOINT?api-version=$API_VERSION"
+        fi
+        
+        echo "Deploying hosted agent to: $FOUNDRY_PROJECT_ENDPOINT"
+        echo "Using image: $IMAGE_REF"
+        
+        # Create the hosted agent using REST API
+        response=$(curl -s -X POST "$FOUNDRY_PROJECT_ENDPOINT/agents/${{ env.AGENT_NAME }}?api-version=$API_VERSION" \
+          -H "Authorization: Bearer ${{ steps.get-token.outputs.foundry_token }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "definition": {
+              "kind": "hosted",
+              "container_configuration": {
+                "image": "'$IMAGE_REF'"
+              },
+              "cpu": "0.5",
+              "memory": "1Gi",
+              "protocol_versions": [
+                {"protocol": "responses", "version": "2.0.0"}
+              ],
+              "environment_variables": {
+                "AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-5.4-mini"
+              }
+            }
+          }')
+        
+        echo "Response: $response"
+        
+        # Check if creation was successful
+        if echo "$response" | jq -e '.name' > /dev/null 2>&1; then
+          AGENT_NAME=$(echo "$response" | jq -r '.name')
+          AGENT_VERSION=$(echo "$response" | jq -r '.version')
+          echo "Successfully created agent: $AGENT_NAME (version: $AGENT_VERSION)"
+          echo "agent_name=$AGENT_NAME" >> $GITHUB_OUTPUT
+          echo "agent_version=$AGENT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Poll for version status
+          echo "Polling for agent version status..."
+          for i in {1..12}; do
+            status=$(curl -s -X GET "$FOUNDRY_PROJECT_ENDPOINT/agents/$AGENT_NAME/versions/$AGENT_VERSION?api-version=$API_VERSION" \
+              -H "Authorization: Bearer ${{ steps.get-token.outputs.foundry_token }}" | jq -r '.status')
+            
+            echo "Status: $status"
+            
+            if [ "$status" = "active" ]; then
+              echo "Agent is ready!"
+              echo "agent_status=active" >> $GITHUB_OUTPUT
+              exit 0
+            elif [ "$status" = "failed" ]; then
+              error=$(curl -s -X GET "$FOUNDRY_PROJECT_ENDPOINT/agents/$AGENT_NAME/versions/$AGENT_VERSION?api-version=$API_VERSION" \
+                -H "Authorization: Bearer ${{ steps.get-token.outputs.foundry_token }}" | jq -r '.error // "Unknown error"')
+              echo "::error::Agent provisioning failed: $error"
+              echo "agent_status=failed" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            sleep 10
+          done
+          
+          echo "::error::Agent provisioning timed out after 2 minutes"
+          exit 1
+        else
+          error=$(echo "$response" | jq -r '.error.message // .message // "Unknown error"')
+          echo "::error::Failed to create agent: $error"
+          exit 1
+        fi

@@ -32,6 +32,17 @@ variable "acr_admin_enabled" {
   default     = true
 }
 
+variable "key_vault_sku" {
+  description = "SKU for Azure Key Vault. For labs, use 'standard' for cost optimization. For production, consider 'premium'"
+  type        = string
+  default     = "standard"
+
+  validation {
+    condition     = contains(["standard", "premium"], var.key_vault_sku)
+    error_message = "Key Vault SKU must be one of: standard, premium"
+  }
+}
+
 variable "tags" {
   description = "Additional tags to apply to all resources"
   type        = map(string)
