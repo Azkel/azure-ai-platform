@@ -102,8 +102,9 @@ jobs:
         FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-$ENVIRONMENT-plc"
         RESOURCE_GROUP_NAME="rg-hosted-agents-$ENVIRONMENT-plc"
         FOUNDRY_PROJECT_ENDPOINT="https://${FOUNDRY_ACCOUNT_NAME}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        # Construct project ID - use secrets context for subscription ID
         echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
-        echo "foundry_project_id=/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.CognitiveServices/accounts/${FOUNDRY_ACCOUNT_NAME}/projects/${{ env.FOUNDRY_PROJECT_NAME }}" >> $GITHUB_OUTPUT
+        echo "foundry_project_id=/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.CognitiveServices/accounts/$FOUNDRY_ACCOUNT_NAME/projects/${{ env.FOUNDRY_PROJECT_NAME }}" >> $GITHUB_OUTPUT
 
   build-and-deploy:
     name: Build, Push and Deploy
@@ -115,8 +116,7 @@ jobs:
       id-token: write
       contents: read
       packages: write
-    env:
-      AZURE_AI_PROJECT_ID: ${{ needs.validate-infra.outputs.foundry_project_id }}
+
 
     steps:
     - name: Checkout
@@ -146,8 +146,11 @@ jobs:
     - name: Set Foundry project context
       run: |
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
+        FOUNDRY_PROJECT_ID="${{ needs.validate-infra.outputs.foundry_project_id }}"
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
+        echo "Setting Foundry project ID: $FOUNDRY_PROJECT_ID"
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
+        echo "AZURE_AI_PROJECT_ID=$FOUNDRY_PROJECT_ID" >> $GITHUB_ENV
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
