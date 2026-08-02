@@ -30,7 +30,7 @@
 param (
     [string]$ProjectName = "hosted-agents-project",
     [string]$AgentName = "hello-world-dotnet-responses",
-    [string]$FoundryName = "cog-hosted-agents-dev-plc"
+    [string]$FoundryName = "cog-hosted-agents-dev-weu"
 )
 
 Write-Host "Setting up appsettings.json for Azure AI Foundry..."

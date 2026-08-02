@@ -10,11 +10,11 @@ module "platform_core" {
   source = "../../shared-modules/platform-core"
 
   workload_name = "hosted-agents"
-  location      = "polandcentral"
+  location      = "westeurope"
   environment   = var.environment
 
-  # VNet configuration
-  # Poland Central does not support Class A (10.x) for Agent Service; use 172.16/16.
+  # VNet configuration (172.16/16 works in all Agent Service regions, including
+  # those without Class A / 10.x support such as Poland Central).
   vnet_address_space      = ["172.16.0.0/16"]
   subnet_address_prefixes = ["172.16.1.0/24"]
 
@@ -33,10 +33,11 @@ module "platform_core" {
 # Replace hyphens from workload_name (e.g., hosted-agents -> hostedagents)
 locals {
   acr_safe_workload_name = replace(var.workload_name, "-", "")
+  location_short         = module.platform_core.location_short
 }
 
 resource "azurerm_container_registry" "acr" {
-  name                = "acr${local.acr_safe_workload_name}${var.environment}plc"
+  name                = "acr${local.acr_safe_workload_name}${var.environment}${local.location_short}"
   resource_group_name = module.platform_core.resource_group_name
   location            = module.platform_core.resource_group_location
   sku                 = var.acr_sku
@@ -58,7 +59,7 @@ data "azurerm_client_config" "current" {}
 # Azure Key Vault for secrets and configuration
 # Using Azure RBAC instead of access policies for simpler management in labs
 resource "azurerm_key_vault" "kv" {
-  name                        = "kv-${var.workload_name}-${var.environment}-plc"
+  name                        = "kv-${var.workload_name}-${var.environment}-${local.location_short}"
   location                    = module.platform_core.resource_group_location
   resource_group_name         = module.platform_core.resource_group_name
   enabled_for_disk_encryption = true

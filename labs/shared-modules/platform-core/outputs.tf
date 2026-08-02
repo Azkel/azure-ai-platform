@@ -8,6 +8,11 @@ output "resource_group_location" {
   value       = azurerm_resource_group.rg.location
 }
 
+output "location_short" {
+  description = "Short location code used in resource names (e.g. plc, weu)"
+  value       = local.location_short
+}
+
 output "vnet_id" {
   description = "The ID of the virtual network"
   value       = azurerm_virtual_network.vnet.id

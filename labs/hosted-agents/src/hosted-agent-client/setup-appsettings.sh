@@ -11,7 +11,7 @@ APPSETTINGS_FILE="${SCRIPT_DIR}/appsettings.json"
 # Default values (dev environment)
 PROJECT_NAME="hosted-agents-project"
 AGENT_NAME="hello-world-dotnet-responses"
-FOUNDRY_NAME="cog-hosted-agents-dev-plc"
+FOUNDRY_NAME="cog-hosted-agents-dev-weu"
 
 # Function to display usage
 usage() {
