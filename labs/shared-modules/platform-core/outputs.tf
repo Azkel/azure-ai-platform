@@ -88,9 +88,3 @@ output "foundry_secondary_access_key" {
   sensitive   = true
 }
 
-# Output to ensure project management is enabled before creating projects
-# This output depends on the azapi_update_resource, ensuring it completes first
-output "foundry_project_management_enabled" {
-  description = "Indicates that project management has been enabled on the Foundry account"
-  value       = azapi_update_resource.foundry_enable_projects.id
-}
