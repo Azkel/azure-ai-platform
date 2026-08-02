@@ -114,12 +114,6 @@ resource "azapi_resource" "foundry_project" {
   # Disable schema validation to allow newer API versions
   # The azapi provider may have stricter validation than the Azure API itself
   schema_validation_enabled = false
-  
-  # Ensure the platform_core module's allowProjectManagement update completes first
-  # This is necessary because the Foundry account must have allowProjectManagement=true
-  # before projects can be created under it
-  # We reference the output that depends on the azapi_update_resource
-  depends_on = [module.platform_core.foundry_project_management_enabled]
 }
 
 # Output the core resources that will be used by other modules
