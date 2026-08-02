@@ -141,12 +141,10 @@ jobs:
     - name: Set Foundry project context
       run: |
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
-        # Use hardcoded dev project ID for now (provided by user)
-        # TODO: Make dynamic for other environments
-        FOUNDRY_PROJECT_ID="/subscriptions/f17b9739-a0fe-48e5-a5e6-0d4182ebd26d/resourceGroups/rg-hosted-agents-dev-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-dev-plc/projects/hosted-agents-project"
+        # Set required environment variable for azd deploy
+        echo "AZURE_AI_PROJECT_ID=/subscriptions/f17b9739-a0fe-48e5-a5e6-0d4182ebd26d/resourceGroups/rg-hosted-agents-dev-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-dev-plc/projects/hosted-agents-project" >> $GITHUB_ENV
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
-        echo "Connecting to project ID: $FOUNDRY_PROJECT_ID"
-        azd ai agent init --project-id "$FOUNDRY_PROJECT_ID" --no-prompt
+        azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
