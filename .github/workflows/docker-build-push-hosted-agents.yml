@@ -52,6 +52,9 @@ jobs:
     name: Validate Infrastructure
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       acr_exists: ${{ steps.check-acr.outputs.acr_exists }}
       acr_name: ${{ steps.check-acr.outputs.acr_name }}
