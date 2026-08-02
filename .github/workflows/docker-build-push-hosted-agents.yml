@@ -140,12 +140,40 @@ jobs:
           --no-prompt
 
     - name: Set Foundry project context
+      working-directory: labs/hosted-agents/src
       run: |
+        set -euo pipefail
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
+
+        # azure.yaml is the azd project; it is checked in. The .azure/ env
+        # directory is gitignored, so first (and cleaned) CI runs must create it.
+        if [ ! -f azure.yaml ]; then
+          echo "::error::azd project not found: azure.yaml is missing in labs/hosted-agents/src"
+          exit 1
+        fi
+
+        if [ -d ".azure/${ENVIRONMENT}" ]; then
+          echo "azd environment '${ENVIRONMENT}' already exists — selecting it"
+          azd env select "${ENVIRONMENT}" --no-prompt
+        else
+          echo "azd environment '${ENVIRONMENT}' not found — creating it"
+          azd env new "${ENVIRONMENT}" \
+            --location "${{ env.AZURE_LOCATION }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --no-prompt
+        fi
+
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
-        azd env set AZURE_LOCATION polandcentral --no-prompt
-        azd env set AZURE_AI_PROJECT_ID /subscriptions/f17b9739-a0fe-48e5-a5e6-0d4182ebd26d/resourceGroups/rg-hosted-agents-dev-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-dev-plc/projects/hosted-agents-project --no-prompt
+
+        PROJECT_ID="/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-hosted-agents-${ENVIRONMENT}-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-${ENVIRONMENT}-plc/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        azd env set AZURE_LOCATION "${{ env.AZURE_LOCATION }}" --no-prompt
+        azd env set AZURE_AI_PROJECT_ID "${PROJECT_ID}" --no-prompt
+        # Also set as GitHub Actions environment variables to ensure they're available
+        echo "AZURE_LOCATION=${{ env.AZURE_LOCATION }}" >> $GITHUB_ENV
+        echo "AZURE_AI_PROJECT_ID=${PROJECT_ID}" >> $GITHUB_ENV
+        azd env get-values
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -195,13 +223,15 @@ jobs:
     - name: Deploy hosted agent
       if: github.event.inputs.skip-deploy == 'false'
       id: deploy-agent
+      working-directory: labs/hosted-agents/src
+      env:
+        IMAGE_REF: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}
+        AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
       run: |
-        IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
+        set -euo pipefail
         echo "Deploying image: $IMAGE_REF"
-        
+
         # Modify azure.yaml to use pre-built image for container deploy
-        cd labs/hosted-agents/src
-        # Create backup and update azure.yaml with image field
         cp azure.yaml azure.yaml.bak
         pip install pyyaml -q 2>/dev/null || true
         python3 << EOF
@@ -222,6 +252,6 @@ for key in ['project', 'codeConfiguration', 'docker']:
 with open('azure.yaml', 'w') as f:
     yaml.dump(data, f, sort_keys=False)
 EOF
-        
+
         # Deploy using azd deploy which will use the image from azure.yaml
-        azd deploy hello-world-dotnet-responses --no-prompt --output json
+        azd deploy hello-world-dotnet-responses -e "$AZURE_ENV_NAME" --no-prompt --output json
