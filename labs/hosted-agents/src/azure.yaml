@@ -41,10 +41,6 @@ services:
     environmentVariables:
       - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
         value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
-      # Sourced from Key Vault secret applicationinsights-connection-string at deploy
-      # time (azd env). Prefer this over baking the connection string into the image.
-      - name: APPLICATIONINSIGHTS_CONNECTION_STRING
-        value: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
     container:
       resources:
         cpu: '0.5'
