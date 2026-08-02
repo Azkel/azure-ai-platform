@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -62,19 +63,89 @@ class Program
         return JsonDocument.Parse(body);
     }
 
+    static string ExtractTextFromContent(JsonElement content)
+    {
+        if (content.ValueKind == JsonValueKind.String)
+            return content.GetString() ?? "";
+
+        if (content.ValueKind != JsonValueKind.Array)
+            return "";
+
+        var parts = new List<string>();
+        foreach (var item in content.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                var s = item.GetString();
+                if (!string.IsNullOrEmpty(s))
+                    parts.Add(s);
+                continue;
+            }
+
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            // Responses API: { "type": "output_text", "text": "..." }
+            if (item.TryGetProperty("text", out var text) &&
+                text.ValueKind == JsonValueKind.String)
+            {
+                var s = text.GetString();
+                if (!string.IsNullOrEmpty(s))
+                    parts.Add(s);
+            }
+        }
+
+        return string.Join("", parts);
+    }
+
     static string ExtractResponseText(JsonDocument d)
     {
         var r = d.RootElement;
+
+        // Responses / hosted-agent API: output is an array of message items
         if (r.TryGetProperty("output", out var o))
-            return o.GetString() ?? "";
-        if (r.TryGetProperty("choices", out var c) && c.GetArrayLength() > 0)
         {
-            var m = c[0].GetProperty("message").GetProperty("content");
-            return m.GetString() ?? "";
+            if (o.ValueKind == JsonValueKind.String)
+                return o.GetString() ?? "";
+
+            if (o.ValueKind == JsonValueKind.Array)
+            {
+                var parts = new List<string>();
+                foreach (var item in o.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object)
+                        continue;
+                    if (item.TryGetProperty("content", out var content))
+                    {
+                        var text = ExtractTextFromContent(content);
+                        if (!string.IsNullOrEmpty(text))
+                            parts.Add(text);
+                    }
+                }
+
+                if (parts.Count > 0)
+                    return string.Join("\n", parts);
+            }
         }
+
+        if (r.TryGetProperty("choices", out var c) &&
+            c.ValueKind == JsonValueKind.Array &&
+            c.GetArrayLength() > 0)
+        {
+            var msg = c[0].GetProperty("message");
+            if (msg.TryGetProperty("content", out var content))
+            {
+                var text = ExtractTextFromContent(content);
+                if (!string.IsNullOrEmpty(text))
+                    return text;
+            }
+        }
+
         if (r.TryGetProperty("value", out var v) &&
-            v.TryGetProperty("outputText", out var ot))
+            v.TryGetProperty("outputText", out var ot) &&
+            ot.ValueKind == JsonValueKind.String)
             return ot.GetString() ?? "";
+
         return JsonSerializer.Serialize(r, new JsonSerializerOptions { WriteIndented = true });
     }
 

@@ -56,7 +56,7 @@ For Windows (PowerShell):
 cat > appsettings.json << EOF
 {
   "FoundrySettings": {
-    "Endpoint": "https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project",
+    "Endpoint": "https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project",
     "AgentName": "hello-world-dotnet-responses"
   }
 }
@@ -77,10 +77,10 @@ dotnet run
 **Method C: Using command line arguments**
 
 ```bash
-dotnet run https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 
 # Or with both endpoint and agent name
-dotnet run https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project hello-world-dotnet-responses
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project hello-world-dotnet-responses
 ```
 
 ## Configuration
@@ -97,7 +97,7 @@ The client supports multiple configuration methods with the following precedence
 ```json
 {
   "FoundrySettings": {
-    "Endpoint": "https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project",
+    "Endpoint": "https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project",
     "AgentName": "hello-world-dotnet-responses"
   }
 }
@@ -109,7 +109,7 @@ Place the `appsettings.json` file in the project directory (alongside Program.cs
 
 ```
 Connected to:
-  Endpoint: https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1
+  Endpoint: https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1
   Agent:    hello-world-dotnet-responses
 
 Type your messages below. Type 'exit', 'quit', 'q', or 'bye' to end.
@@ -156,7 +156,7 @@ Goodbye!
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FOUNDRY_ENDPOINT` | Foundry project endpoint URL | `https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project` |
+| `FOUNDRY_ENDPOINT` | Foundry project endpoint URL | `https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project` |
 | `AGENT_NAME` | Agent name | `hello-world-dotnet-responses` |
 | `AZURE_TENANT_ID` | Azure AD Tenant ID | From Azure CLI |
 | `AZURE_CLIENT_ID` | Azure AD Application ID | From Azure CLI |
@@ -183,7 +183,7 @@ Simply run `az login` before using the client, and it will automatically use you
 dotnet build
 
 # Run without building first (auto-builds)
-dotnet run https://hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 ```
 
 ## Dependencies

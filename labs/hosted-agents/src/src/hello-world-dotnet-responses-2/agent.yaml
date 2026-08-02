@@ -1,6 +1,6 @@
 name: hello-world-dotnet-responses
 template:
-    description: Hosted container agent using pre-built image acrhostedagentsdevplc.azurecr.io/hello-world-dotnet-responses:test
+    description: Hosted container agent using pre-built image acrhostedagentsdevweu.azurecr.io/hello-world-dotnet-responses:test
     kind: hosted
     name: hello-world-dotnet-responses
     protocols:
