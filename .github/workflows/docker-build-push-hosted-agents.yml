@@ -116,6 +116,8 @@ jobs:
       id-token: write
       contents: read
       packages: write
+    env:
+      AZURE_AI_PROJECT_ID: ${{ needs.validate-infra.outputs.foundry_project_id }}
 
     steps:
     - name: Checkout
@@ -145,11 +147,8 @@ jobs:
     - name: Set Foundry project context
       run: |
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
-        FOUNDRY_PROJECT_ID="${{ needs.validate-infra.outputs.foundry_project_id }}"
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
-        echo "Setting Foundry project ID: $FOUNDRY_PROJECT_ID"
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
-        echo "AZURE_AI_PROJECT_ID=$FOUNDRY_PROJECT_ID" >> $GITHUB_ENV
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
