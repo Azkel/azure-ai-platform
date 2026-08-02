@@ -48,6 +48,9 @@ resource "azurerm_key_vault" "kv" {
   enabled_for_disk_encryption = true
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   sku_name                    = var.key_vault_sku
+  
+  # Required in azurerm v5.x
+  rbac_authorization_enabled = false
 
   # Enable soft delete and purge protection for production
   # For labs, we can keep it minimal
@@ -64,7 +67,7 @@ resource "azurerm_key_vault" "kv" {
 # Using azapi provider to create the project under the Foundry account
 # Resource type: Microsoft.CognitiveServices/accounts/projects
 resource "azapi_resource" "foundry_project" {
-  type      = "Microsoft.CognitiveServices/accounts/projects@2024-05-01-preview"
+  type      = "Microsoft.CognitiveServices/accounts/projects@2026-05-01"
   name      = var.foundry_project_name
   parent_id = module.platform_core.foundry_id
   location  = module.platform_core.resource_group_location
@@ -80,6 +83,10 @@ resource "azapi_resource" "foundry_project" {
     Environment = var.environment
     Workload    = var.workload_name
   }, var.tags)
+  
+  # Disable schema validation to allow newer API versions
+  # The azapi provider may have stricter validation than the Azure API itself
+  schema_validation_enabled = false
 }
 
 # Get current Azure client configuration for Key Vault

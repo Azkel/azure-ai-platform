@@ -14,7 +14,7 @@ terraform {
 
 provider "azurerm" {
   features {}
-  resource_provider_registrations = ["core", "Microsoft.CognitiveServices"]
+  resource_provider_registrations = "extended"
   use_oidc        = true
 
 }
