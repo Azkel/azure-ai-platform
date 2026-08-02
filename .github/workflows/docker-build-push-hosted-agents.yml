@@ -44,6 +44,8 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_LOCATION: "westeurope"
+  LOCATION_SHORT: "weu"
   AGENT_NAME: "hello-world-dotnet-responses"
   FOUNDRY_PROJECT_NAME: "hosted-agents-project"
 
@@ -52,6 +54,9 @@ jobs:
     name: Validate Infrastructure
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       acr_exists: ${{ steps.check-acr.outputs.acr_exists }}
       acr_name: ${{ steps.check-acr.outputs.acr_name }}
@@ -71,9 +76,9 @@ jobs:
       id: check-acr
       run: |
         # Construct the full ACR name based on the pattern in Terraform
-        # Pattern: acr{workload_no_hyphens}{environment}plc (e.g., acrhostedagentsdevplc)
+        # Pattern: acr{workload_no_hyphens}{environment}{location_short} (e.g., acrhostedagentsdevweu)
         # ACR names can only contain alphanumeric characters
-        FULL_ACR_NAME="acrhostedagents${{ github.event.inputs.environment }}plc"
+        FULL_ACR_NAME="acrhostedagents${{ github.event.inputs.environment }}${{ env.LOCATION_SHORT }}"
         echo "Checking if ACR exists: $FULL_ACR_NAME"
         
         if az acr show --name "$FULL_ACR_NAME" --output none 2>/dev/null; then
@@ -90,13 +95,43 @@ jobs:
     - name: Get Foundry project endpoint
       id: get-endpoint
       run: |
-        # Calculate Foundry project endpoint from Terraform naming convention
-        # Foundry account: cog-{workload}-{environment}-plc
-        # Project endpoint: https://cog-{workload}-{environment}-plc.services.ai.azure.com/api/projects/{project_name}
+        set -euo pipefail
+        # Resource name is cog-{workload}-{env}-{region}, but the DNS hostname
+        # uses custom_subdomain_name = {workload}-{env}-{region} (no cog- prefix).
         ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-$ENVIRONMENT-plc"
-        FOUNDRY_PROJECT_ENDPOINT="https://${FOUNDRY_ACCOUNT_NAME}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
-        echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
+        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+
+        echo "Looking up Foundry account: $FOUNDRY_ACCOUNT_NAME in $RG_NAME"
+        if ! az cognitiveservices account show \
+          --name "$FOUNDRY_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --output none 2>/dev/null; then
+          echo "::error::Foundry account '$FOUNDRY_ACCOUNT_NAME' not found in '$RG_NAME'."
+          echo "Please run the 'Terraform Deploy - Hosted Agents' workflow first."
+          exit 1
+        fi
+
+        SUBDOMAIN=$(az cognitiveservices account show \
+          --name "$FOUNDRY_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --query properties.customSubDomainName -o tsv)
+        ACCOUNT_ENDPOINT=$(az cognitiveservices account show \
+          --name "$FOUNDRY_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --query properties.endpoint -o tsv)
+
+        if [ -z "$SUBDOMAIN" ] || [ "$SUBDOMAIN" = "None" ]; then
+          echo "::error::Foundry account has no customSubDomainName"
+          exit 1
+        fi
+
+        # azd / Foundry agent APIs use services.ai.azure.com/api/projects/{name}
+        FOUNDRY_PROJECT_ENDPOINT="https://${SUBDOMAIN}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        echo "Account endpoint: $ACCOUNT_ENDPOINT"
+        echo "Custom subdomain: $SUBDOMAIN"
+        echo "Project endpoint: $FOUNDRY_PROJECT_ENDPOINT"
+        echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> "$GITHUB_OUTPUT"
 
   build-and-deploy:
     name: Build, Push and Deploy
@@ -108,6 +143,7 @@ jobs:
       id-token: write
       contents: read
       packages: write
+
 
     steps:
     - name: Checkout
@@ -126,11 +162,55 @@ jobs:
     - name: Install Foundry extensions
       run: azd ext install microsoft.foundry --no-prompt
 
-    - name: Set Foundry project context
+    - name: Authenticate Azure Developer CLI
       run: |
+        azd auth login \
+          --client-id ${{ env.AZURE_CLIENT_ID }} \
+          --federated-credential-provider github \
+          --tenant-id ${{ env.AZURE_TENANT_ID }} \
+          --no-prompt
+
+    - name: Set Foundry project context
+      working-directory: labs/hosted-agents/src
+      run: |
+        set -euo pipefail
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
+
+        # azure.yaml is the azd project; it is checked in. The .azure/ env
+        # directory is gitignored, so first (and cleaned) CI runs must create it.
+        if [ ! -f azure.yaml ]; then
+          echo "::error::azd project not found: azure.yaml is missing in labs/hosted-agents/src"
+          exit 1
+        fi
+
+        if [ -d ".azure/${ENVIRONMENT}" ]; then
+          echo "azd environment '${ENVIRONMENT}' already exists - selecting it"
+          azd env select "${ENVIRONMENT}" --no-prompt
+        else
+          echo "azd environment '${ENVIRONMENT}' not found - creating it"
+          azd env new "${ENVIRONMENT}" \
+            --location "${{ env.AZURE_LOCATION }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --no-prompt
+        fi
+
         echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
+
+        PROJECT_ID="/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        # azd deploy reads these from the active azd environment (.azure/<env>/.env),
+        # not from global config alone — FOUNDRY_PROJECT_ENDPOINT is required.
+        azd env set AZURE_LOCATION "${{ env.AZURE_LOCATION }}" --no-prompt
+        azd env set AZURE_AI_PROJECT_ID "${PROJECT_ID}" --no-prompt
+        azd env set FOUNDRY_PROJECT_ENDPOINT "$FOUNDRY_ENDPOINT" --no-prompt
+        azd env set FOUNDRY_PROJECT_ARM_ID "${PROJECT_ID}" --no-prompt
+        azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME "gpt-5-mini" --no-prompt
+
+        echo "AZURE_LOCATION=${{ env.AZURE_LOCATION }}" >> $GITHUB_ENV
+        echo "AZURE_AI_PROJECT_ID=${PROJECT_ID}" >> $GITHUB_ENV
+        echo "FOUNDRY_PROJECT_ENDPOINT=$FOUNDRY_ENDPOINT" >> $GITHUB_ENV
+        azd env get-values
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -180,20 +260,36 @@ jobs:
     - name: Deploy hosted agent
       if: github.event.inputs.skip-deploy == 'false'
       id: deploy-agent
+      working-directory: labs/hosted-agents/src
+      env:
+        IMAGE_REF: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}
+        AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
+        FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
       run: |
-        IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
+        set -euo pipefail
         echo "Deploying image: $IMAGE_REF"
-        
-        # Use azd to deploy the agent
-        # --no-prompt: Required for CI
-        # --image: Use the pre-built image
-        azd ai agent deploy \
-          --name ${{ env.AGENT_NAME }} \
-          --image "$IMAGE_REF" \
-          --protocol responses \
-          --protocol-version 2.0.0 \
-          --cpu 0.5 \
-          --memory 1Gi \
-          --set AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.4-mini \
-          --no-prompt \
-          --output json
+
+        # Modify azure.yaml to use pre-built image for container deploy.
+        # Keep the heredoc body indented so this workflow stays valid YAML
+        # (column-0 lines break parsing and hide workflow_dispatch on the branch).
+        cp azure.yaml azure.yaml.bak
+        pip install pyyaml -q 2>/dev/null || true
+        python3 <<'EOF'
+        import os
+        import yaml
+
+        with open('azure.yaml', 'r') as f:
+            data = yaml.safe_load(f)
+
+        svc = data['services']['hello-world-dotnet-responses']
+        svc['language'] = 'docker'
+        svc['image'] = os.environ['IMAGE_REF']
+        for key in ['project', 'codeConfiguration', 'docker']:
+            svc.pop(key, None)
+
+        with open('azure.yaml', 'w') as f:
+            yaml.dump(data, f, sort_keys=False)
+        EOF
+
+        # Deploy using azd deploy which will use the image from azure.yaml
+        azd deploy hello-world-dotnet-responses -e "$AZURE_ENV_NAME" --no-prompt --output json

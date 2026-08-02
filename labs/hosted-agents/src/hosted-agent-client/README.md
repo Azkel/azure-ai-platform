@@ -28,14 +28,35 @@ dotnet restore
 
 ### 3. Configure (choose one method)
 
-**Method A: Using appsettings.json (Recommended for demos)**
+**Method A: Using setup script (Recommended)**
+
+Use the provided setup script to automatically populate appsettings.json from your Azure resources:
+
+```bash
+# Run the setup script (requires az login)
+./setup-appsettings.sh
+
+# Or with custom project/agent names
+./setup-appsettings.sh -p my-project -a my-agent
+
+# Then run the client
+dotnet run
+```
+
+For Windows (PowerShell):
+```powershell
+.\setup-appsettings.ps1
+.\setup-appsettings.ps1 -ProjectName my-project -AgentName my-agent
+```
+
+**Method B: Manual appsettings.json (for advanced users)**
 
 ```bash
 # Edit appsettings.json with your settings
 cat > appsettings.json << EOF
 {
   "FoundrySettings": {
-    "Endpoint": "https://cog-*.services.ai.azure.com/api/projects/my-project",
+    "Endpoint": "https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project",
     "AgentName": "hello-world-dotnet-responses"
   }
 }
@@ -56,10 +77,10 @@ dotnet run
 **Method C: Using command line arguments**
 
 ```bash
-dotnet run https://cog-*.services.ai.azure.com/api/projects/my-project
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 
 # Or with both endpoint and agent name
-dotnet run https://cog-*.services.ai.azure.com/api/projects/my-project hello-world-dotnet-responses
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project hello-world-dotnet-responses
 ```
 
 ## Configuration
@@ -76,7 +97,7 @@ The client supports multiple configuration methods with the following precedence
 ```json
 {
   "FoundrySettings": {
-    "Endpoint": "https://cog-*.services.ai.azure.com/api/projects/my-project",
+    "Endpoint": "https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project",
     "AgentName": "hello-world-dotnet-responses"
   }
 }
@@ -88,7 +109,7 @@ Place the `appsettings.json` file in the project directory (alongside Program.cs
 
 ```
 Connected to:
-  Endpoint: https://cog-*.services.ai.azure.com/api/projects/my-project/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1
+  Endpoint: https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1
   Agent:    hello-world-dotnet-responses
 
 Type your messages below. Type 'exit', 'quit', 'q', or 'bye' to end.
@@ -135,8 +156,8 @@ Goodbye!
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FOUNDRY_ENDPOINT` | Foundry project endpoint URL | Required |
-| `AGENT_NAME` | Agent name | hello-world-dotnet-responses |
+| `FOUNDRY_ENDPOINT` | Foundry project endpoint URL | `https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project` |
+| `AGENT_NAME` | Agent name | `hello-world-dotnet-responses` |
 | `AZURE_TENANT_ID` | Azure AD Tenant ID | From Azure CLI |
 | `AZURE_CLIENT_ID` | Azure AD Application ID | From Azure CLI |
 | `AZURE_CLIENT_SECRET` | Azure AD Application Secret | From Azure CLI |
@@ -162,7 +183,7 @@ Simply run `az login` before using the client, and it will automatically use you
 dotnet build
 
 # Run without building first (auto-builds)
-dotnet run <endpoint>
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 ```
 
 ## Dependencies
@@ -171,13 +192,29 @@ dotnet run <endpoint>
 - Azure.Identity (NuGet package) - for Azure authentication
 - DotNetEnv (NuGet package) - for .env file support (optional)
 
+## Setup Scripts
+
+The project includes helper scripts to automate configuration:
+
+- **`setup-appsettings.sh`** - Bash script for Linux/macOS
+- **`setup-appsettings.ps1`** - PowerShell script for Windows
+
+Both scripts:
+- Require Azure CLI to be installed and logged in (`az login`)
+- Automatically detect your Foundry resource
+- Populate appsettings.json with the correct endpoint
+- Support custom project and agent names via command-line arguments
+
 ## Project Structure
 
 ```
 hosted-agent-client/
-├── Program.cs          # Main CLI application
+├── Program.cs              # Main CLI application
 ├── HostedAgentClient.csproj  # .NET project file
-└── README.md           # This file
+├── appsettings.json        # Configuration file
+├── setup-appsettings.sh    # Setup script (Linux/macOS)
+├── setup-appsettings.ps1   # Setup script (Windows)
+└── README.md               # This file
 ```
 
 ## Exit Commands

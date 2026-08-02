@@ -32,12 +32,12 @@ The HelloWorld agent:
 1. Receives a user message via the `/responses` endpoint
 2. Retrieves conversation history using `ResponseContext.GetHistoryAsync()`
 3. Constructs a prompt with the full conversation context
-4. Calls a Foundry model (e.g., `gpt-5.4-mini`) via the Responses API
+4. Calls a Foundry model (e.g., `gpt-5-mini`) via the Responses API
 5. Returns the model's response to the user
 
 **Required Environment Variables** (auto-injected by Foundry):
 - `FOUNDRY_PROJECT_ENDPOINT` - Foundry project endpoint
-- `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (default: `gpt-5.4-mini`)
+- `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (default: `gpt-5-mini`)
 - `APPLICATIONINSIGHTS_CONNECTION_STRING` - App Insights connection string (auto-injected)
 
 ## What This Lab Provides
@@ -73,6 +73,10 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
   - Verify: `dotnet --version`
 - **Docker** - For local container builds
 - **jq** (optional) - For pretty-printing JSON responses
+
+## Region
+
+This lab targets **West Europe** (`westeurope` / `weu`). Hosted Agents data-plane APIs were verified there; Poland Central control-plane deploy can succeed while project/agent APIs return `Project not found`.
 
 ## Quick Start
 
@@ -152,21 +156,22 @@ The lab uses the shared `platform-core` module:
 ```hcl
 module "platform_core" {
   source = "../../shared-modules/platform-core"
-  
+
   workload_name = "hosted-agents"
-  location      = "polandcentral"
+  location      = "westeurope"
   environment   = var.environment
-  
-  # Network configuration
-  vnet_address_space       = ["10.1.0.0/16"]
-  subnet_address_prefixes = ["10.1.1.0/24"]
-  
+
+  # Network configuration (172.16/16; required in regions without Class A / 10.x for Agent Service)
+  vnet_address_space      = ["172.16.0.0/16"]
+  subnet_address_prefixes = ["172.16.1.0/24"]
+
   # Monitoring
-  log_analytics_sku             = "PerGB2018"
+  log_analytics_sku               = "PerGB2018"
   log_analytics_retention_in_days = 30
-  
-  # Microsoft Foundry
-  foundry_sku = "S0"
+
+  # Microsoft Foundry + Hosted Agents network injection at account create
+  foundry_sku                             = "S0"
+  foundry_agent_network_injection_enabled = true
 }
 ```
 
@@ -192,7 +197,7 @@ The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](
 - **Deploy only**: `deploy-only: true` - Deploys an existing image (uses `latest` tag)
 
 **Naming convention:**
-- ACR name: `acr{workload_no_hyphens}{environment}plc` (e.g., `acrhostedagentsdevplc`)
+- ACR name: `acr{workload_no_hyphens}{environment}{location_short}` (e.g., `acrhostedagentsdevweu`)
 - Agent name: `hello-world-dotnet-responses`
 - Image: `{ACR}.azurecr.io/hello-world-dotnet-responses:{tag}`
 
@@ -249,13 +254,13 @@ To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC 
   az cognitiveservices account purge --name cog-{workload}-{environment}-{location} --resource-group rg-{workload}-{environment}-{location} --location {location}
   
   # Purge Key Vault
-  az keyvault purge --name kv-{workload}-{environment}-plc --location {location}
+  az keyvault purge --name kv-{workload}-{environment}-{location-short} --location {location}
   
   # Purge ACR (if needed)
-  az acr purge --name acr{workload}{environment}plc --registry acr{workload}{environment}plc.azurecr.io
+  az acr purge --name acr{workload}{environment}{location-short} --registry acr{workload}{environment}{location-short}.azurecr.io
   
   # Delete Application Insights Smart Detection rules (if blocking deletion)
-  az monitor app-insights smart-detection list --resource-group rg-{workload}-{environment}-plc --app appi-{workload}-{environment}-plc | jq -r '.[] | .name' | xargs -I {} az monitor app-insights smart-detection delete --resource-group rg-{workload}-{environment}-plc --app appi-{workload}-{environment}-plc --name {}
+  az monitor app-insights smart-detection list --resource-group rg-{workload}-{environment}-{location-short} --app appi-{workload}-{environment}-{location-short} | jq -r '.[] | .name' | xargs -I {} az monitor app-insights smart-detection delete --resource-group rg-{workload}-{environment}-{location-short} --app appi-{workload}-{environment}-{location-short} --name {}
   ```
 - Consider adding a post-destroy cleanup step in your workflow to purge soft-deleted resources
 
@@ -295,17 +300,10 @@ Run the GitHub Action workflow to build, push, and deploy:
 Or use Azure Developer CLI locally:
 ```bash
 # Set the Foundry project endpoint
-azd ai project set https://cog-hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project
+azd ai project set https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 
-# Deploy the agent
-azd ai agent deploy \
-  --name hello-world-dotnet-responses \
-  --image acrhostedagentsdevplc.azurecr.io/hello-world-dotnet-responses:latest \
-  --protocol responses \
-  --protocol-version 2.0.0 \
-  --cpu 0.5 \
-  --memory 1Gi \
-  --set AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.4-mini
+# Deploy the agent (from labs/hosted-agents/src with azure.yaml image/env configured)
+azd deploy hello-world-dotnet-responses --from-package acrhostedagentsdevweu.azurecr.io/hello-world-dotnet-responses:latest --no-prompt
 ```
 
 ### 2. Invoke the Agent
@@ -325,7 +323,7 @@ azd ai agent invoke hello-world-dotnet-responses "What is Microsoft Foundry?"
 TOKEN=$(az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv)
 
 # Get Foundry project endpoint from Terraform outputs
-FOUNDRY_ENDPOINT="https://cog-hosted-agents-dev-plc.services.ai.azure.com/api/projects/hosted-agents-project"
+FOUNDRY_ENDPOINT="https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project"
 
 # Invoke the agent
 curl -X POST "$FOUNDRY_ENDPOINT/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1" \
@@ -343,7 +341,7 @@ curl -X POST "$FOUNDRY_ENDPOINT/agents/hello-world-dotnet-responses/endpoint/pro
 The agent automatically sends telemetry to Application Insights. To view:
 
 1. Go to Azure Portal
-2. Navigate to the Application Insights resource: `appi-hosted-agents-dev-plc`
+2. Navigate to the Application Insights resource: `appi-hosted-agents-dev-weu`
 3. Check these sections:
    - **Overview**: Request rate, failure rate, response time
    - **Transaction search**: Individual request traces

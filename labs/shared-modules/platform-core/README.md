@@ -24,7 +24,7 @@ module "platform_core" {
   
   # Required
   workload_name = "your-workload"
-  location      = "polandcentral"
+  location      = "westeurope"
   environment   = "dev"
   
   # Optional - defaults shown
@@ -48,7 +48,7 @@ module "platform_core" {
 |------|------|---------|----------|-------------|
 | `workload_name` | string | `"shared"` | No | Workload name for resource naming |
 | `resource_group_name` | string | `null` | No | Custom resource group name (auto-generated if not provided) |
-| `location` | string | `"polandcentral"` | No | Azure region for resources |
+| `location` | string | `"westeurope"` | No | Azure region for resources |
 | `environment` | string | `"dev"` | No | Environment name (dev, staging, prod) |
 | `vnet_address_space` | list(string) | `["10.0.0.0/16"]` | No | Address space for the virtual network |
 | `subnet_address_prefixes` | list(string) | `["10.0.1.0/24"]` | No | Address prefixes for the subnet |
@@ -84,16 +84,16 @@ All resources follow this naming pattern:
 ```
 
 Examples:
-- Resource Group: `rg-hosted-agents-dev-plc`
-- Virtual Network: `vnet-hosted-agents-dev-plc`
-- Subnet: `snet-hosted-agents-dev-plc-001`
-- Log Analytics: `law-hosted-agents-dev-plc`
-- Cognitive Account: `cog-hosted-agents-dev-plc`
+- Resource Group: `rg-hosted-agents-dev-weu`
+- Virtual Network: `vnet-hosted-agents-dev-weu`
+- Subnet: `snet-hosted-agents-dev-weu-001`
+- Log Analytics: `law-hosted-agents-dev-weu`
+- Cognitive Account: `cog-hosted-agents-dev-weu`
 
 Where location short codes include:
+- `westeurope` → `weu`
 - `polandcentral` → `plc`
 - `eastus` → `eus`
-- `westeurope` → `weu`
 - And many others
 
 ## Cost Optimization

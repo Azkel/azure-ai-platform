@@ -10,20 +10,22 @@ module "platform_core" {
   source = "../../shared-modules/platform-core"
 
   workload_name = "hosted-agents"
-  location      = "polandcentral"
+  location      = "westeurope"
   environment   = var.environment
 
-  # VNet configuration
-  vnet_address_space      = ["10.1.0.0/16"]
-  subnet_address_prefixes = ["10.1.1.0/24"]
+  # VNet configuration (172.16/16 works in all Agent Service regions, including
+  # those without Class A / 10.x support such as Poland Central).
+  vnet_address_space      = ["172.16.0.0/16"]
+  subnet_address_prefixes = ["172.16.1.0/24"]
 
   # Log Analytics configuration
   log_analytics_sku               = "PerGB2018"
   log_analytics_retention_in_days = 30 # Cost-optimized for labs
 
   # Microsoft Foundry configuration
-  foundry_sku = "S0" # Cost-optimized for labs; use F0 or higher for production
-
+  foundry_sku                                = "S0" # Cost-optimized for labs; use F0 or higher for production
+  additional_foundry_user_principal_ids      = var.additional_foundry_user_principal_ids
+  foundry_agent_network_injection_enabled    = true
 }
 
 # Azure Container Registry for hosted-agents workload
@@ -31,10 +33,11 @@ module "platform_core" {
 # Replace hyphens from workload_name (e.g., hosted-agents -> hostedagents)
 locals {
   acr_safe_workload_name = replace(var.workload_name, "-", "")
+  location_short         = module.platform_core.location_short
 }
 
 resource "azurerm_container_registry" "acr" {
-  name                = "acr${local.acr_safe_workload_name}${var.environment}plc"
+  name                = "acr${local.acr_safe_workload_name}${var.environment}${local.location_short}"
   resource_group_name = module.platform_core.resource_group_name
   location            = module.platform_core.resource_group_location
   sku                 = var.acr_sku
@@ -56,20 +59,20 @@ data "azurerm_client_config" "current" {}
 # Azure Key Vault for secrets and configuration
 # Using Azure RBAC instead of access policies for simpler management in labs
 resource "azurerm_key_vault" "kv" {
-  name                        = "kv-${var.workload_name}-${var.environment}-plc"
+  name                        = "kv-${var.workload_name}-${var.environment}-${local.location_short}"
   location                    = module.platform_core.resource_group_location
   resource_group_name         = module.platform_core.resource_group_name
   enabled_for_disk_encryption = true
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   sku_name                    = var.key_vault_sku
-  
+
   # Use Azure RBAC for authorization (simpler for labs where infra is recreated often)
   rbac_authorization_enabled = true
 
   # Soft delete is required by Azure (minimum 7 days)
   # purge_protection_enabled = false allows purging after soft delete
   soft_delete_retention_days = 7
-  purge_protection_enabled    = false
+  purge_protection_enabled   = false
 
   tags = merge({
     Environment = var.environment
@@ -77,12 +80,43 @@ resource "azurerm_key_vault" "kv" {
   }, var.tags)
 }
 
-# Role assignment for the current user to manage Key Vault
+# Role assignment for the current deployer to manage Key Vault
 # Using Azure RBAC instead of Key Vault access policies
 resource "azurerm_role_assignment" "kv_admin" {
   scope                = azurerm_key_vault.kv.id
   role_definition_name = "Key Vault Administrator"
   principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# Keep interactive operators / extra identities as KV admins when CI applies
+# (current.object_id is the GitHub OIDC app in Actions, not the human user).
+resource "azurerm_role_assignment" "additional_kv_admins" {
+  for_each = toset(var.additional_key_vault_admin_principal_ids)
+
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = each.value
+}
+
+# App Insights connection string as a Key Vault secret (source of truth for agents).
+# Hosted agents resolve it at deploy time into APPLICATIONINSIGHTS_CONNECTION_STRING
+# rather than baking it into the image or azure.yaml.
+resource "azurerm_key_vault_secret" "appinsights_connection_string" {
+  name         = "applicationinsights-connection-string"
+  value        = module.platform_core.application_insights_connection_string
+  key_vault_id = azurerm_key_vault.kv.id
+  content_type = "text/plain"
+
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+    Purpose     = "app-insights"
+  }, var.tags)
+
+  depends_on = [
+    azurerm_role_assignment.kv_admin,
+    azurerm_role_assignment.additional_kv_admins,
+  ]
 }
 
 # Microsoft Foundry Project
@@ -98,25 +132,99 @@ resource "azapi_resource" "foundry_project" {
   name      = var.foundry_project_name
   parent_id = module.platform_core.foundry_id
   location  = module.platform_core.resource_group_location
-  
+
   # Body as HCL object (azapi v2.x+ requires this)
+  # Projects require a managed identity (SystemAssigned) per Foundry API
   body = {
+    identity = {
+      type = "SystemAssigned"
+    }
     properties = {
       description = "Hosted Agents project for ${var.workload_name} workload"
     }
   }
-  
+
   tags = merge({
     Environment = var.environment
     Workload    = var.workload_name
   }, var.tags)
-  
+
   # Disable schema validation to allow newer API versions
   # The azapi provider may have stricter validation than the Azure API itself
   schema_validation_enabled = false
 
+  # Export identity so we can grant ACR pull to the project MI
+  response_export_values = ["identity"]
+
   # Ensure Foundry User role is assigned before creating projects
   depends_on = [module.platform_core.foundry_user_role_assignment_id]
+}
+
+locals {
+  foundry_project_principal_id = azapi_resource.foundry_project.output.identity.principalId
+}
+
+# Account-level Agents capability host is auto-created when the Foundry account
+# is provisioned with network_injection.scenario=agent (name like
+# "{account}@aml_aiagentservice"). Do not create a second account host.
+
+# Project-level Agents capability host (required for agent runtime routing).
+# Must NOT include customerSubnet (API rejects subnet at project scope).
+resource "azapi_resource" "foundry_project_capability_host" {
+  type                      = "Microsoft.CognitiveServices/accounts/projects/capabilityHosts@2025-06-01"
+  name                      = "caphost"
+  parent_id                 = azapi_resource.foundry_project.id
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      capabilityHostKind = "Agents"
+    }
+  }
+
+  depends_on = [azapi_resource.foundry_project]
+}
+
+# Project MI pulls the hosted-agent image from ACR at deploy/runtime.
+# Prefer Repository Reader (data plane); also grant AcrPull for registries
+# still on classic RBAC mode.
+resource "azurerm_role_assignment" "foundry_project_acr_pull" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = local.foundry_project_principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_project_acr_repo_reader" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "Container Registry Repository Reader"
+  principal_id         = local.foundry_project_principal_id
+}
+
+# Account MI is also observed to participate in hosted-agent image pulls.
+resource "azurerm_role_assignment" "foundry_account_acr_pull" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = module.platform_core.foundry_principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_account_acr_repo_reader" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "Container Registry Repository Reader"
+  principal_id         = module.platform_core.foundry_principal_id
+}
+
+# Foundry identities need Key Vault Secrets User to read the App Insights
+# connection string (and any future agent secrets stored in this vault).
+resource "azurerm_role_assignment" "foundry_project_kv_secrets_user" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = local.foundry_project_principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_account_kv_secrets_user" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.platform_core.foundry_principal_id
 }
 
 # Output the core resources that will be used by other modules
@@ -195,6 +303,17 @@ output "key_vault_name" {
 output "key_vault_uri" {
   description = "The URI of the Azure Key Vault"
   value       = azurerm_key_vault.kv.vault_uri
+}
+
+output "appinsights_connection_string_secret_name" {
+  description = "Key Vault secret name for the Application Insights connection string"
+  value       = azurerm_key_vault_secret.appinsights_connection_string.name
+}
+
+output "appinsights_connection_string_secret_id" {
+  description = "Key Vault secret resource ID for the Application Insights connection string"
+  value       = azurerm_key_vault_secret.appinsights_connection_string.id
+  sensitive   = true
 }
 
 # Application Insights outputs (from platform-core module)

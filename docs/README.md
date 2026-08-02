@@ -111,15 +111,15 @@ All resources follow [Microsoft Cloud Adoption Framework (CAF) naming](https://l
 ```
 
 Examples:
-- `rg-hosted-agents-dev-plc` - Resource Group
-- `vnet-hosted-agents-dev-plc` - Virtual Network
-- `law-hosted-agents-dev-plc` - Log Analytics Workspace
+- `rg-hosted-agents-dev-weu` - Resource Group
+- `vnet-hosted-agents-dev-weu` - Virtual Network
+- `law-hosted-agents-dev-weu` - Log Analytics Workspace
 
 Where:
 - **resource-type**: `rg`, `vnet`, `snet`, `law`, etc.
 - **workload**: `shared`, `hosted-agents`, etc.
 - **environment**: `dev`, `staging`, `prod`
-- **location-short**: `plc` (Poland Central), `eus` (East US), etc.
+- **location-short**: `weu` (West Europe), `eus` (East US), etc.
 
 ## 🛠️ Troubleshooting
 

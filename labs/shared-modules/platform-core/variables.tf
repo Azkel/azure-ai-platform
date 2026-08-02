@@ -13,7 +13,7 @@ variable "resource_group_name" {
 variable "location" {
   description = "The Azure region where resources will be created"
   type        = string
-  default     = "polandcentral"
+  default     = "westeurope"
 }
 
 variable "environment" {
@@ -23,15 +23,15 @@ variable "environment" {
 }
 
 variable "vnet_address_space" {
-  description = "Address space for the virtual network"
+  description = "Address space for the virtual network. For Foundry Agent Service in regions without Class A (10.x) support (e.g. polandcentral), use 172.16.0.0/12 or 192.168.0.0/16 ranges."
   type        = list(string)
-  default     = ["10.0.0.0/16"]
+  default     = ["172.16.0.0/16"]
 }
 
 variable "subnet_address_prefixes" {
-  description = "Address prefixes for subnets"
+  description = "Address prefixes for the agent-delegated subnet. Prefer /24; minimum /27. Must be Microsoft.App/environments-delegated when foundry_agent_network_injection_enabled is true."
   type        = list(string)
-  default     = ["10.0.1.0/24"]
+  default     = ["172.16.1.0/24"]
 }
 
 variable "log_analytics_workspace_name" {
@@ -62,4 +62,16 @@ variable "tags" {
   description = "Additional tags to apply to all resources"
   type        = map(string)
   default     = {}
+}
+
+variable "additional_foundry_user_principal_ids" {
+  description = "Extra Entra object IDs to grant Foundry User on the Cognitive Account (interactive users need this for agent data-plane invoke)."
+  type        = list(string)
+  default     = []
+}
+
+variable "foundry_agent_network_injection_enabled" {
+  description = "When true, create the Foundry AIServices account with network_injection.scenario=agent into the module subnet. Required for Hosted agents with BYO VNet and MUST be set at account creation time (cannot be added later)."
+  type        = bool
+  default     = false
 }

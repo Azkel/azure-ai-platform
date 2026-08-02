@@ -68,11 +68,26 @@ resource "azurerm_virtual_network" "vnet" {
 }
 
 # Create subnet
+# Hosted / Standard Agent Service requires Microsoft.App/environments delegation
+# when using BYO VNet network injection (network_injection.scenario = agent).
 resource "azurerm_subnet" "subnet" {
   name                 = local.generated_subnet_name
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = var.subnet_address_prefixes
+
+  dynamic "delegation" {
+    for_each = var.foundry_agent_network_injection_enabled ? [1] : []
+    content {
+      name = "Microsoft.App.environments"
+      service_delegation {
+        name = "Microsoft.App/environments"
+        actions = [
+          "Microsoft.Network/virtualNetworks/subnets/join/action",
+        ]
+      }
+    }
+  }
 }
 
 # Create Log Analytics workspace
@@ -174,6 +189,17 @@ resource "azurerm_cognitive_account" "foundry" {
 
   project_management_enabled = true
 
+  # Hosted agents: network injection MUST be present at account creation.
+  # Adding it later is unsupported and leaves invoke returning "Project not found".
+  # See: https://learn.microsoft.com/azure/ai-foundry/agents/how-to/virtual-networks
+  dynamic "network_injection" {
+    for_each = var.foundry_agent_network_injection_enabled ? [1] : []
+    content {
+      scenario  = "agent"
+      subnet_id = azurerm_subnet.subnet.id
+    }
+  }
+
   tags = merge({
     Environment = var.environment
     Workload    = var.workload_name
@@ -183,6 +209,8 @@ resource "azurerm_cognitive_account" "foundry" {
   identity {
     type = "SystemAssigned"
   }
+
+  depends_on = [azurerm_subnet.subnet]
 }
 
 # Assign Foundry User role to the current identity on the Cognitive Account
@@ -191,6 +219,19 @@ resource "azurerm_role_assignment" "foundry_user" {
   scope                = azurerm_cognitive_account.foundry.id
   role_definition_name = "Foundry User"
   principal_id         = data.azurerm_client_config.current.object_id
+
+  depends_on = [azurerm_cognitive_account.foundry]
+}
+
+# Interactive users / extra identities need Foundry User for agent data-plane
+# calls (list/invoke). Subscription Owner does not include these dataActions;
+# without this role, services.ai.azure.com often returns a misleading 404.
+resource "azurerm_role_assignment" "additional_foundry_users" {
+  for_each = toset(var.additional_foundry_user_principal_ids)
+
+  scope                = azurerm_cognitive_account.foundry.id
+  role_definition_name = "Foundry User"
+  principal_id         = each.value
 
   depends_on = [azurerm_cognitive_account.foundry]
 }
