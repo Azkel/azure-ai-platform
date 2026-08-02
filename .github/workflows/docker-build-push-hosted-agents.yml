@@ -168,11 +168,17 @@ jobs:
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
 
         PROJECT_ID="/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-hosted-agents-${ENVIRONMENT}-plc/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-${ENVIRONMENT}-plc/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        # azd deploy reads these from the active azd environment (.azure/<env>/.env),
+        # not from global config alone — FOUNDRY_PROJECT_ENDPOINT is required.
         azd env set AZURE_LOCATION "${{ env.AZURE_LOCATION }}" --no-prompt
         azd env set AZURE_AI_PROJECT_ID "${PROJECT_ID}" --no-prompt
-        # Also set as GitHub Actions environment variables to ensure they're available
+        azd env set FOUNDRY_PROJECT_ENDPOINT "$FOUNDRY_ENDPOINT" --no-prompt
+        azd env set FOUNDRY_PROJECT_ARM_ID "${PROJECT_ID}" --no-prompt
+        azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME "gpt-5.4-mini" --no-prompt
+
         echo "AZURE_LOCATION=${{ env.AZURE_LOCATION }}" >> $GITHUB_ENV
         echo "AZURE_AI_PROJECT_ID=${PROJECT_ID}" >> $GITHUB_ENV
+        echo "FOUNDRY_PROJECT_ENDPOINT=$FOUNDRY_ENDPOINT" >> $GITHUB_ENV
         azd env get-values
 
     - name: Set up Docker Buildx
@@ -227,6 +233,7 @@ jobs:
       env:
         IMAGE_REF: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}
         AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
+        FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
       run: |
         set -euo pipefail
         echo "Deploying image: $IMAGE_REF"
