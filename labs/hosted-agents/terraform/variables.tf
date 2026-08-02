@@ -60,3 +60,9 @@ variable "additional_foundry_user_principal_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "additional_key_vault_admin_principal_ids" {
+  description = "Extra Entra object IDs granted Key Vault Administrator (in addition to the current deployer)."
+  type        = list(string)
+  default     = []
+}

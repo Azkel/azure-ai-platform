@@ -80,12 +80,22 @@ resource "azurerm_key_vault" "kv" {
   }, var.tags)
 }
 
-# Role assignment for the current user to manage Key Vault
+# Role assignment for the current deployer to manage Key Vault
 # Using Azure RBAC instead of Key Vault access policies
 resource "azurerm_role_assignment" "kv_admin" {
   scope                = azurerm_key_vault.kv.id
   role_definition_name = "Key Vault Administrator"
   principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# Keep interactive operators / extra identities as KV admins when CI applies
+# (current.object_id is the GitHub OIDC app in Actions, not the human user).
+resource "azurerm_role_assignment" "additional_kv_admins" {
+  for_each = toset(var.additional_key_vault_admin_principal_ids)
+
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = each.value
 }
 
 # App Insights connection string as a Key Vault secret (source of truth for agents).
@@ -103,7 +113,10 @@ resource "azurerm_key_vault_secret" "appinsights_connection_string" {
     Purpose     = "app-insights"
   }, var.tags)
 
-  depends_on = [azurerm_role_assignment.kv_admin]
+  depends_on = [
+    azurerm_role_assignment.kv_admin,
+    azurerm_role_assignment.additional_kv_admins,
+  ]
 }
 
 # Microsoft Foundry Project

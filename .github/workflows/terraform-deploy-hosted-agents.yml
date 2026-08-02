@@ -57,10 +57,10 @@ jobs:
     
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
+      uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: "1.5.7"
 
@@ -87,13 +87,55 @@ jobs:
         cd labs/hosted-agents/terraform
         terraform validate
 
+    - name: Ensure deployer Key Vault data-plane access
+      # azurerm_key_vault_secret refresh calls GetSecret. When infra was last
+      # applied by a human user, the GitHub OIDC principal may lack KV RBAC and
+      # plan fails with 403 ForbiddenByRbac. Grant the runner identity admin on
+      # the lab vault when it already exists (no-op if missing / already assigned).
+      if: github.event_name != 'pull_request'
+      run: |
+        set -euo pipefail
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        LOCATION_SHORT="weu"
+        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${LOCATION_SHORT}"
+        KV_NAME="kv-hosted-agents-${ENVIRONMENT}-${LOCATION_SHORT}"
+
+        if ! az keyvault show --name "$KV_NAME" --resource-group "$RG_NAME" --output none 2>/dev/null; then
+          echo "Key Vault $KV_NAME not found yet - skipping RBAC bootstrap"
+          exit 0
+        fi
+
+        SP_OBJECT_ID="$(az ad sp show --id "${{ env.ARM_CLIENT_ID }}" --query id -o tsv)"
+        KV_ID="$(az keyvault show --name "$KV_NAME" --resource-group "$RG_NAME" --query id -o tsv)"
+        if az role assignment list --assignee-object-id "$SP_OBJECT_ID" --scope "$KV_ID" --role "Key Vault Administrator" --query '[0].id' -o tsv | grep -q .; then
+          echo "Deployer already has Key Vault Administrator on $KV_NAME"
+          exit 0
+        fi
+
+        echo "Granting Key Vault Administrator on $KV_NAME to deployer $SP_OBJECT_ID"
+        az role assignment create \
+          --assignee-object-id "$SP_OBJECT_ID" \
+          --assignee-principal-type ServicePrincipal \
+          --role "Key Vault Administrator" \
+          --scope "$KV_ID" \
+          --output none
+
     - name: Terraform Plan
       id: plan
       if: github.event_name == 'pull_request' || github.event.inputs.action == 'plan'
       run: |
+        set -euo pipefail
         cd labs/hosted-agents/terraform
+        EXTRA_ARGS=()
+        # PR checks should not require live Key Vault secret reads. The OIDC
+        # app often lacks GetSecret when a human last applied; -refresh=false
+        # still validates configuration against state for the PR gate.
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          EXTRA_ARGS+=(-refresh=false)
+        fi
         terraform plan -no-color -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+          "${EXTRA_ARGS[@]}"
       continue-on-error: false
 
     - name: Terraform Apply
