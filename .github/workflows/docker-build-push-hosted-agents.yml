@@ -151,7 +151,7 @@ jobs:
           type=ref,event=branch
           type=ref,event=tag
           type=sha
-          type=raw,value=latest,enable={{eq github.ref_name github.event.repository.default_branch}}
+          type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push Docker image
       if: github.event.inputs.deploy-only == 'false'
