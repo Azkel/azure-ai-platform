@@ -114,6 +114,9 @@ resource "azapi_resource" "foundry_project" {
   # Disable schema validation to allow newer API versions
   # The azapi provider may have stricter validation than the Azure API itself
   schema_validation_enabled = false
+
+  # Ensure Foundry User role is assigned before creating projects
+  depends_on = [module.platform_core.foundry_user_role_assignment_id]
 }
 
 # Output the core resources that will be used by other modules

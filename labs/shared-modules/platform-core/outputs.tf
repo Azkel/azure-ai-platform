@@ -88,3 +88,8 @@ output "foundry_secondary_access_key" {
   sensitive   = true
 }
 
+output "foundry_user_role_assignment_id" {
+  description = "The ID of the Foundry User role assignment on the Cognitive Account"
+  value       = azurerm_role_assignment.foundry_user.id
+}
+

@@ -11,6 +11,9 @@ terraform {
   }
 }
 
+# Get current Azure client configuration for RBAC assignments
+data "azurerm_client_config" "current" {}
+
 locals {
   # Location short codes for resource naming
   location_short_codes = {
@@ -180,4 +183,14 @@ resource "azurerm_cognitive_account" "foundry" {
   identity {
     type = "SystemAssigned"
   }
+}
+
+# Assign Foundry User role to the current identity on the Cognitive Account
+# This is required to create Foundry projects
+resource "azurerm_role_assignment" "foundry_user" {
+  scope                = azurerm_cognitive_account.foundry.id
+  role_definition_name = "Foundry User"
+  principal_id         = data.azurerm_client_config.current.object_id
+
+  depends_on = [azurerm_cognitive_account.foundry]
 }
