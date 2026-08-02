@@ -1,0 +1,99 @@
+name: Docker Build and Push - Hosted Agents
+
+# GitHub Actions workflow for building and pushing Docker image to Azure Container Registry
+# for the HelloWorld hosted agent sample.
+#
+# This workflow assumes the Azure Container Registry has been created by Terraform.
+# If ACR doesn't exist, run the "Terraform Deploy - Hosted Agents" workflow first.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to (dev, staging, prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  WORKLOAD_NAME: "hosted-agents"
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure Azure CLI with OIDC
+      uses: azure/login@v3
+      with:
+        client-id: ${{ env.AZURE_CLIENT_ID }}
+        tenant-id: ${{ env.AZURE_TENANT_ID }}
+        subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Check if Azure Container Registry exists
+      id: check-acr
+      run: |
+        # Construct the full ACR name based on the pattern in Terraform
+        # Pattern: acr${workload_name}${environment}plc
+        FULL_ACR_NAME="acr${{ env.WORKLOAD_NAME }}${{ github.event.inputs.environment }}plc"
+        echo "Checking if ACR exists: $FULL_ACR_NAME"
+        
+        # Check if the ACR exists using Azure CLI
+        if az acr show --name "$FULL_ACR_NAME" --output none 2>/dev/null; then
+          echo "ACR exists: $FULL_ACR_NAME"
+          echo "acr_exists=true" >> $GITHUB_OUTPUT
+          echo "acr_name=$FULL_ACR_NAME" >> $GITHUB_OUTPUT
+        else
+          echo "::error::Azure Container Registry '$FULL_ACR_NAME' does not exist."
+          echo "Please run the 'Terraform Deploy - Hosted Agents' workflow first to create the infrastructure."
+          echo "acr_exists=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Set up Docker Buildx
+      if: steps.check-acr.outputs.acr_exists == 'true'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Azure Container Registry
+      if: steps.check-acr.outputs.acr_exists == 'true'
+      run: |
+        # Use Azure CLI to log in to ACR (uses OIDC authentication)
+        az acr login --name ${{ steps.check-acr.outputs.acr_name }} --output none
+
+    - name: Extract metadata for Docker image
+      if: steps.check-acr.outputs.acr_exists == 'true'
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ steps.check-acr.outputs.acr_name }}.azurecr.io/hello-world-dotnet-responses
+        tags: |
+          type=ref,event=branch
+          type=ref,event=tag
+          type=sha
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      if: steps.check-acr.outputs.acr_exists == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: labs/hosted-agents/src/src/hello-world-dotnet-responses
+        file: labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
