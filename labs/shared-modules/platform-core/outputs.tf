@@ -33,6 +33,34 @@ output "log_analytics_workspace_name" {
   value       = azurerm_log_analytics_workspace.law.name
 }
 
+# Application Insights outputs
+output "application_insights_id" {
+  description = "The ID of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.id
+}
+
+output "application_insights_name" {
+  description = "The name of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.name
+}
+
+output "application_insights_app_id" {
+  description = "The App ID of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.app_id
+}
+
+output "application_insights_instrumentation_key" {
+  description = "The Instrumentation Key of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.instrumentation_key
+  sensitive   = true
+}
+
+output "application_insights_connection_string" {
+  description = "The Connection String of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.connection_string
+  sensitive   = true
+}
+
 output "foundry_id" {
   description = "The ID of the Microsoft Foundry Cognitive Account"
   value       = azurerm_cognitive_account.foundry.id
@@ -59,3 +87,9 @@ output "foundry_secondary_access_key" {
   value       = azurerm_cognitive_account.foundry.secondary_access_key
   sensitive   = true
 }
+
+output "foundry_user_role_assignment_id" {
+  description = "The ID of the Foundry User role assignment on the Cognitive Account"
+  value       = azurerm_role_assignment.foundry_user.id
+}
+

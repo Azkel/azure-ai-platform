@@ -1,0 +1,199 @@
+name: Docker Build, Push and Deploy - Hosted Agents
+
+# GitHub Actions workflow for building, pushing Docker image to Azure Container Registry,
+# and deploying the HelloWorld hosted agent sample at enterprise scale.
+#
+# Architecture:
+# - Infrastructure: Terraform-managed (ACR, Key Vault, Foundry account + project)
+# - CI/CD: GitHub Actions with dedicated runners (not local developer machines)
+# - Deployment: Azure Developer CLI (azd) for agent deployment to Foundry
+#
+# Prerequisites:
+# - Terraform infrastructure must be deployed first (ACR, Foundry project)
+# - GitHub OIDC configured for Azure authentication
+# - Service principal with appropriate RBAC roles
+#
+# References:
+# - https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli
+# - https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to (dev, staging, prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      skip-deploy:
+        description: 'Skip hosted agent deployment (build and push only)'
+        required: false
+        default: 'false'
+        type: boolean
+      deploy-only:
+        description: 'Skip build and only deploy existing image (uses latest tag)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AGENT_NAME: "hello-world-dotnet-responses"
+  FOUNDRY_PROJECT_NAME: "hosted-agents-project"
+
+jobs:
+  validate-infra:
+    name: Validate Infrastructure
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    outputs:
+      acr_exists: ${{ steps.check-acr.outputs.acr_exists }}
+      acr_name: ${{ steps.check-acr.outputs.acr_name }}
+      foundry_project_endpoint: ${{ steps.get-endpoint.outputs.foundry_project_endpoint }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure Azure CLI with OIDC
+      uses: azure/login@v3
+      with:
+        client-id: ${{ env.AZURE_CLIENT_ID }}
+        tenant-id: ${{ env.AZURE_TENANT_ID }}
+        subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Check if Azure Container Registry exists
+      id: check-acr
+      run: |
+        # Construct the full ACR name based on the pattern in Terraform
+        # Pattern: acr{workload_no_hyphens}{environment}plc (e.g., acrhostedagentsdevplc)
+        # ACR names can only contain alphanumeric characters
+        FULL_ACR_NAME="acrhostedagents${{ github.event.inputs.environment }}plc"
+        echo "Checking if ACR exists: $FULL_ACR_NAME"
+        
+        if az acr show --name "$FULL_ACR_NAME" --output none 2>/dev/null; then
+          echo "ACR exists: $FULL_ACR_NAME"
+          echo "acr_exists=true" >> $GITHUB_OUTPUT
+          echo "acr_name=$FULL_ACR_NAME" >> $GITHUB_OUTPUT
+        else
+          echo "::error::Azure Container Registry '$FULL_ACR_NAME' does not exist."
+          echo "Please run the 'Terraform Deploy - Hosted Agents' workflow first to create the infrastructure."
+          echo "acr_exists=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Get Foundry project endpoint
+      id: get-endpoint
+      run: |
+        # Calculate Foundry project endpoint from Terraform naming convention
+        # Foundry account: cog-{workload}-{environment}-plc
+        # Project endpoint: https://cog-{workload}-{environment}-plc.services.ai.azure.com/api/projects/{project_name}
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-$ENVIRONMENT-plc"
+        FOUNDRY_PROJECT_ENDPOINT="https://${FOUNDRY_ACCOUNT_NAME}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
+
+  build-and-deploy:
+    name: Build, Push and Deploy
+    needs: validate-infra
+    if: needs.validate-infra.outputs.acr_exists == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure Azure CLI with OIDC
+      uses: azure/login@v3
+      with:
+        client-id: ${{ env.AZURE_CLIENT_ID }}
+        tenant-id: ${{ env.AZURE_TENANT_ID }}
+        subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Install Azure Developer CLI
+      uses: Azure/setup-azd@v2
+
+    - name: Install Foundry extensions
+      run: azd ext install microsoft.foundry --no-prompt
+
+    - name: Set Foundry project context
+      run: |
+        FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
+        echo "Setting Foundry project endpoint: $FOUNDRY_ENDPOINT"
+        azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Azure Container Registry
+      run: |
+        az acr login --name ${{ needs.validate-infra.outputs.acr_name }} --output none
+
+    - name: Extract metadata for Docker image
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=tag
+          type=sha
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      if: github.event.inputs.deploy-only == 'false'
+      uses: docker/build-push-action@v5
+      id: build-push
+      with:
+        context: labs/hosted-agents/src/src/hello-world-dotnet-responses
+        file: labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Get image tag
+      if: steps.build-push.outcome == 'success' || github.event.inputs.deploy-only == 'true'
+      id: get-tag
+      run: |
+        # If we built, use the first tag; if deploy-only, use 'latest'
+        if [ "${{ github.event.inputs.deploy-only }}" = "true" ]; then
+          TAG="latest"
+        else
+          TAGS="${{ steps.meta.outputs.tags }}"
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          LAST_TAG=${TAG_ARRAY[0]}
+          TAG=${LAST_TAG#*:}
+        fi
+        echo "Using tag: $TAG"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Deploy hosted agent
+      if: github.event.inputs.skip-deploy == 'false'
+      id: deploy-agent
+      run: |
+        IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
+        echo "Deploying image: $IMAGE_REF"
+        
+        # Use azd to deploy the agent
+        # --no-prompt: Required for CI
+        # --image: Use the pre-built image
+        azd ai agent deploy \
+          --name ${{ env.AGENT_NAME }} \
+          --image "$IMAGE_REF" \
+          --protocol responses \
+          --protocol-version 2.0.0 \
+          --cpu 0.5 \
+          --memory 1Gi \
+          --set AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.4-mini \
+          --no-prompt \
+          --output json
