@@ -46,7 +46,12 @@ resource "azurerm_container_registry" "acr" {
   }, var.tags)
 }
 
+# Get current Azure client configuration for RBAC
+# This needs to be accessed before the Key Vault resource
+data "azurerm_client_config" "current" {}
+
 # Azure Key Vault for secrets and configuration
+# Using Azure RBAC instead of access policies for simpler management in labs
 resource "azurerm_key_vault" "kv" {
   name                        = "kv-${var.workload_name}-${var.environment}-plc"
   location                    = module.platform_core.resource_group_location
@@ -55,8 +60,8 @@ resource "azurerm_key_vault" "kv" {
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   sku_name                    = var.key_vault_sku
   
-  # Required in azurerm v5.x
-  rbac_authorization_enabled = false
+  # Use Azure RBAC for authorization (simpler for labs where infra is recreated often)
+  rbac_authorization_enabled = true
 
   # Soft delete is required by Azure (minimum 7 days)
   # purge_protection_enabled = false allows purging after soft delete
@@ -67,6 +72,14 @@ resource "azurerm_key_vault" "kv" {
     Environment = var.environment
     Workload    = var.workload_name
   }, var.tags)
+}
+
+# Role assignment for the current user to manage Key Vault
+# Using Azure RBAC instead of Key Vault access policies
+resource "azurerm_role_assignment" "kv_admin" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = data.azurerm_client_config.current.object_id
 }
 
 # Microsoft Foundry Project
@@ -94,21 +107,6 @@ resource "azapi_resource" "foundry_project" {
   # Disable schema validation to allow newer API versions
   # The azapi provider may have stricter validation than the Azure API itself
   schema_validation_enabled = false
-}
-
-# Get current Azure client configuration for Key Vault
-# This needs to be accessed before the Key Vault resource
-data "azurerm_client_config" "current" {}
-
-# Access policy for the current user to manage Key Vault
-resource "azurerm_key_vault_access_policy" "admin" {
-  key_vault_id = azurerm_key_vault.kv.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = data.azurerm_client_config.current.object_id
-
-  key_permissions    = ["Get", "List", "Create", "Delete", "Recover", "Purge"]
-  secret_permissions = ["Get", "List", "Set", "Delete", "Recover", "Purge"]
-  certificate_permissions = ["Get", "List", "Create", "Delete", "Recover", "Purge"]
 }
 
 # Output the core resources that will be used by other modules
