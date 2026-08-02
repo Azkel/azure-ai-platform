@@ -199,12 +199,28 @@ jobs:
         IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}"
         echo "Deploying image: $IMAGE_REF"
         
-        # Deploy the agent from pre-built image using azd ai agent init
-        # For pre-built images, use --deploy-mode container with --image flag
+        # Modify azure.yaml to use pre-built image for container deploy
         cd labs/hosted-agents/src
-        azd ai agent init \
-          --no-prompt \
-          --agent-name ${{ env.AGENT_NAME }} \
-          --image "$IMAGE_REF" \
-          --deploy-mode container \
-          --output json
+        # Create backup and update azure.yaml with image field
+        cp azure.yaml azure.yaml.bak
+        python3 << EOF
+import yaml
+import os
+
+with open('azure.yaml', 'r') as f:
+    data = yaml.safe_load(f)
+
+svc = data['services']['hello-world-dotnet-responses']
+svc['language'] = 'docker'
+svc['image'] = os.environ['IMAGE_REF']
+# Remove source-based fields
+for key in ['project', 'codeConfiguration', 'docker']:
+    if key in svc:
+        del svc[key]
+
+with open('azure.yaml', 'w') as f:
+    yaml.dump(data, f, sort_keys=False)
+EOF
+        
+        # Deploy using azd deploy which will use the image from azure.yaml
+        azd deploy hello-world-dotnet-responses --no-prompt --output json
