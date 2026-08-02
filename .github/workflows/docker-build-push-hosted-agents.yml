@@ -154,10 +154,10 @@ jobs:
         fi
 
         if [ -d ".azure/${ENVIRONMENT}" ]; then
-          echo "azd environment '${ENVIRONMENT}' already exists — selecting it"
+          echo "azd environment '${ENVIRONMENT}' already exists - selecting it"
           azd env select "${ENVIRONMENT}" --no-prompt
         else
-          echo "azd environment '${ENVIRONMENT}' not found — creating it"
+          echo "azd environment '${ENVIRONMENT}' not found - creating it"
           azd env new "${ENVIRONMENT}" \
             --location "${{ env.AZURE_LOCATION }}" \
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
@@ -231,27 +231,27 @@ jobs:
         set -euo pipefail
         echo "Deploying image: $IMAGE_REF"
 
-        # Modify azure.yaml to use pre-built image for container deploy
+        # Modify azure.yaml to use pre-built image for container deploy.
+        # Keep the heredoc body indented so this workflow stays valid YAML
+        # (column-0 lines break parsing and hide workflow_dispatch on the branch).
         cp azure.yaml azure.yaml.bak
         pip install pyyaml -q 2>/dev/null || true
-        python3 << EOF
-import yaml
-import os
+        python3 <<'EOF'
+        import os
+        import yaml
 
-with open('azure.yaml', 'r') as f:
-    data = yaml.safe_load(f)
+        with open('azure.yaml', 'r') as f:
+            data = yaml.safe_load(f)
 
-svc = data['services']['hello-world-dotnet-responses']
-svc['language'] = 'docker'
-svc['image'] = os.environ['IMAGE_REF']
-# Remove source-based fields
-for key in ['project', 'codeConfiguration', 'docker']:
-    if key in svc:
-        del svc[key]
+        svc = data['services']['hello-world-dotnet-responses']
+        svc['language'] = 'docker'
+        svc['image'] = os.environ['IMAGE_REF']
+        for key in ['project', 'codeConfiguration', 'docker']:
+            svc.pop(key, None)
 
-with open('azure.yaml', 'w') as f:
-    yaml.dump(data, f, sort_keys=False)
-EOF
+        with open('azure.yaml', 'w') as f:
+            yaml.dump(data, f, sort_keys=False)
+        EOF
 
         # Deploy using azd deploy which will use the image from azure.yaml
         azd deploy hello-world-dotnet-responses -e "$AZURE_ENV_NAME" --no-prompt --output json
