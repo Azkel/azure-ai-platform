@@ -58,9 +58,8 @@ resource "azurerm_key_vault" "kv" {
   # Required in azurerm v5.x
   rbac_authorization_enabled = false
 
-  # Enable soft delete and purge protection for production
-  # For labs, we can keep it minimal
-  soft_delete_retention_days = 7
+  # Disable soft delete - Key Vault will be deleted immediately on terraform destroy
+  soft_delete_retention_days = 0
   purge_protection_enabled    = false
 
   tags = merge({
