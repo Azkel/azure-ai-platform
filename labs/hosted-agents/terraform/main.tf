@@ -68,6 +68,21 @@ resource "azurerm_key_vault" "kv" {
   }, var.tags)
 }
 
+# Application Insights for monitoring hosted agents
+# Provides observability (logs, traces, metrics) for the hosted agent
+resource "azurerm_application_insights" "appinsights" {
+  name                = "appi-${var.workload_name}-${var.environment}-plc"
+  location            = module.platform_core.resource_group_location
+  resource_group_name = module.platform_core.resource_group_name
+  workspace_resource_id = module.platform_core.log_analytics_workspace_id
+  application_type    = "web"
+  
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+  }, var.tags)
+}
+
 # Microsoft Foundry Project
 # Using azapi provider to create the project under the Foundry account
 # Resource type: Microsoft.CognitiveServices/accounts/projects
@@ -186,6 +201,34 @@ output "key_vault_name" {
 output "key_vault_uri" {
   description = "The URI of the Azure Key Vault"
   value       = azurerm_key_vault.kv.vault_uri
+}
+
+# Application Insights outputs
+output "application_insights_id" {
+  description = "The ID of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.id
+}
+
+output "application_insights_name" {
+  description = "The name of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.name
+}
+
+output "application_insights_app_id" {
+  description = "The App ID of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.app_id
+}
+
+output "application_insights_instrumentation_key" {
+  description = "The Instrumentation Key of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.instrumentation_key
+  sensitive   = true
+}
+
+output "application_insights_connection_string" {
+  description = "The Connection String of the Application Insights resource"
+  value       = azurerm_application_insights.appinsights.connection_string
+  sensitive   = true
 }
 
 # Microsoft Foundry Project outputs
