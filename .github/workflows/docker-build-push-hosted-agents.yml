@@ -94,13 +94,43 @@ jobs:
     - name: Get Foundry project endpoint
       id: get-endpoint
       run: |
-        # Calculate Foundry project endpoint from Terraform naming convention
-        # Foundry account: cog-{workload}-{environment}-plc
-        # Project endpoint: https://cog-{workload}-{environment}-plc.services.ai.azure.com/api/projects/{project_name}
+        set -euo pipefail
+        # Resource name is cog-{workload}-{env}-{region}, but the DNS hostname
+        # uses custom_subdomain_name = {workload}-{env}-{region} (no cog- prefix).
         ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-$ENVIRONMENT-plc"
-        FOUNDRY_PROJECT_ENDPOINT="https://${FOUNDRY_ACCOUNT_NAME}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
-        echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
+        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-plc"
+        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-${ENVIRONMENT}-plc"
+
+        echo "Looking up Foundry account: $FOUNDRY_ACCOUNT_NAME in $RG_NAME"
+        if ! az cognitiveservices account show \
+          --name "$FOUNDRY_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --output none 2>/dev/null; then
+          echo "::error::Foundry account '$FOUNDRY_ACCOUNT_NAME' not found in '$RG_NAME'."
+          echo "Please run the 'Terraform Deploy - Hosted Agents' workflow first."
+          exit 1
+        fi
+
+        SUBDOMAIN=$(az cognitiveservices account show \
+          --name "$FOUNDRY_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --query properties.customSubDomainName -o tsv)
+        ACCOUNT_ENDPOINT=$(az cognitiveservices account show \
+          --name "$FOUNDRY_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --query properties.endpoint -o tsv)
+
+        if [ -z "$SUBDOMAIN" ] || [ "$SUBDOMAIN" = "None" ]; then
+          echo "::error::Foundry account has no customSubDomainName"
+          exit 1
+        fi
+
+        # azd / Foundry agent APIs use services.ai.azure.com/api/projects/{name}
+        FOUNDRY_PROJECT_ENDPOINT="https://${SUBDOMAIN}.services.ai.azure.com/api/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        echo "Account endpoint: $ACCOUNT_ENDPOINT"
+        echo "Custom subdomain: $SUBDOMAIN"
+        echo "Project endpoint: $FOUNDRY_PROJECT_ENDPOINT"
+        echo "foundry_project_endpoint=$FOUNDRY_PROJECT_ENDPOINT" >> "$GITHUB_OUTPUT"
 
   build-and-deploy:
     name: Build, Push and Deploy
