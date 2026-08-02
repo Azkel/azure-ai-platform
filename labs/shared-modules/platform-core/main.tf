@@ -81,6 +81,19 @@ resource "azurerm_log_analytics_workspace" "law" {
   }, var.tags)
 }
 
+# Create Application Insights
+resource "azurerm_application_insights" "appinsights" {
+  name                = "appi-${var.workload_name}-${var.environment}-${local.location_short}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  application_type    = "web"
+  
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+  }, var.tags)
+}
+
 # Create Microsoft Foundry Cognitive Account
 # Microsoft Foundry uses Cognitive Services with kind = "AIServices"
 # Reference: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cognitive_account
