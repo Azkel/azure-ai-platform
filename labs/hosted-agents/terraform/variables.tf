@@ -1,14 +1,3 @@
-variable "environment" {
-  description = "Environment name (dev, staging, prod)"
-  type        = string
-  default     = "dev"
-
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be one of: dev, staging, prod"
-  }
-}
-
 variable "workload_name" {
   description = "The workload name for resource naming"
   type        = string
@@ -16,7 +5,7 @@ variable "workload_name" {
 }
 
 variable "acr_sku" {
-  description = "SKU for Azure Container Registry. For labs, use 'Basic' for cost optimization. For production, consider 'Standard' or 'Premium'"
+  description = "SKU for Azure Container Registry (Basic keeps lab cost low)"
   type        = string
   default     = "Basic"
 
@@ -33,7 +22,7 @@ variable "acr_admin_enabled" {
 }
 
 variable "key_vault_sku" {
-  description = "SKU for Azure Key Vault. For labs, use 'standard' for cost optimization. For production, consider 'premium'"
+  description = "SKU for Azure Key Vault (standard keeps lab cost low)"
   type        = string
   default     = "standard"
 
@@ -65,4 +54,71 @@ variable "additional_key_vault_admin_principal_ids" {
   description = "Extra Entra object IDs granted Key Vault Administrator (in addition to the current deployer)."
   type        = list(string)
   default     = []
+}
+
+variable "agent_demo_secret_value" {
+  description = "User-provided demo secret value stored in Key Vault and read by the hosted agent at runtime via managed identity."
+  type        = string
+  default     = "Smykpol Labs — greet callers as a concise platform engineer."
+  sensitive   = true
+}
+
+variable "agent_demo_secret_name" {
+  description = "Key Vault secret name the hosted agent reads at runtime."
+  type        = string
+  default     = "agent-demo-message"
+}
+
+variable "storage_blob_container_name" {
+  description = "Blob container used by the hosted agent for note persistence."
+  type        = string
+  default     = "agent-notes"
+}
+
+variable "additional_storage_blob_data_contributor_principal_ids" {
+  description = "Extra Entra object IDs granted Storage Blob Data Contributor (e.g. local developers). The hosted agent identity is granted post-deploy by the Docker workflow."
+  type        = list(string)
+  default     = []
+}
+
+variable "additional_key_vault_secrets_user_principal_ids" {
+  description = "Extra Entra object IDs granted Key Vault Secrets User (e.g. local developers). The hosted agent identity is granted post-deploy by the Docker workflow."
+  type        = list(string)
+  default     = []
+}
+
+variable "model_deployment_name" {
+  description = "Foundry model deployment name (must match AZURE_AI_MODEL_DEPLOYMENT_NAME used by the agent)."
+  type        = string
+  default     = "gpt-5-mini"
+}
+
+variable "model_name" {
+  description = "Model name from the Foundry model catalog."
+  type        = string
+  default     = "gpt-5-mini"
+}
+
+variable "model_version" {
+  description = "Model version. Required for gpt-5 family deployments."
+  type        = string
+  default     = "2025-08-07"
+}
+
+variable "model_format" {
+  description = "Model format (e.g. OpenAI)."
+  type        = string
+  default     = "OpenAI"
+}
+
+variable "model_sku_name" {
+  description = "Deployment SKU name (GlobalStandard keeps lab quota simple)."
+  type        = string
+  default     = "GlobalStandard"
+}
+
+variable "model_sku_capacity" {
+  description = "Deployment capacity (TPM thousands). Keep low for labs."
+  type        = number
+  default     = 10
 }

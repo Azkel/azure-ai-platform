@@ -203,7 +203,7 @@ class Program
         Console.WriteLine("  1. Command line arguments");
         Console.WriteLine("  2. Environment variables (FOUNDRY_ENDPOINT, AGENT_NAME)");
         Console.WriteLine("  3. appsettings.json file");
-        Console.WriteLine("  4. Defaults (AgentName: hello-world-dotnet-responses)");
+        Console.WriteLine("  4. Defaults (AgentName: storage-kv-agent)");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  dotnet run                                   # Uses appsettings.json");
@@ -251,7 +251,7 @@ class Program
                 ? args[1]
                 : Environment.GetEnvironmentVariable("AGENT_NAME") ??
                   appSettingsAgent ??
-                  "hello-world-dotnet-responses";
+                  "storage-kv-agent";
 
             if (string.IsNullOrEmpty(endpoint))
             {

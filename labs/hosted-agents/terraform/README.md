@@ -17,11 +17,12 @@ This directory contains the Terraform configuration for the Hosted Agents lab in
 
 Defines the lab configuration using the shared `platform-core` module. This is where you:
 
-- Set the workload name and environment
+- Set the workload name (environment is hardcoded to `dev`)
 - Configure network settings (VNet, subnet)
 - Configure Log Analytics settings
 - Configure Microsoft Foundry settings
-- Define outputs for other modules to consume
+- Provision ACR, Key Vault (incl. agent demo secret), and agent data Storage Account
+- Define outputs for other modules / deploy workflows to consume
 
 ### providers.tf
 
@@ -40,9 +41,7 @@ terraform {
 
 ### variables.tf
 
-Defines the input variables for the lab:
-
-- `environment` - Deployment environment (dev, staging, prod)
+Defines optional inputs for the lab (SKU overrides, demo secret value, extra RBAC principal IDs). Environment is not a variable — it is hardcoded in `main.tf`.
 
 ## Usage
 
@@ -53,14 +52,14 @@ To work with this configuration locally:
 ```bash
 cd labs/hosted-agents/terraform
 
-# Initialize Terraform
+# Initialize Terraform (configure backend as needed)
 terraform init
 
 # Review the plan
-terraform plan -var="environment=dev"
+terraform plan
 
 # Apply the configuration
-terraform apply -var="environment=dev"
+terraform apply
 ```
 
 ### GitHub Actions
@@ -95,9 +94,7 @@ Additionally set:
 ## Tips
 
 - **Always run `terraform plan` first** to review changes before applying
-- **Use separate environments** (dev, staging, prod) for different deployment stages
-- **Review costs** before deploying to production
-- **Clean up resources** when not in use to avoid ongoing costs
+- **Clean up resources** when not in use — the daily cleanup workflow helps avoid ongoing costs
 
 ## See Also
 

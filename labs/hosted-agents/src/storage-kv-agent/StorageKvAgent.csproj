@@ -18,8 +18,12 @@
     <PackageReference Include="Azure.AI.Projects" Version="2.0.1" />
     <!-- OpenAI bridge for Foundry — provides GetProjectResponsesClientForModel(), CreateResponseOptions, ResponseItem -->
     <PackageReference Include="Azure.AI.Extensions.OpenAI" Version="2.0.0" />
-    <!-- Azure authentication via DefaultAzureCredential -->
+    <!-- Azure authentication via DefaultAzureCredential (agent identity when hosted) -->
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!-- Blob notes via managed identity -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.26.0" />
+    <!-- User-provided demo secret via managed identity -->
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.8.0" />
     <!-- .env file support for local development -->
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
   </ItemGroup>

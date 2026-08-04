@@ -1,17 +1,17 @@
 name: Docker Build, Push and Deploy - Hosted Agents
 
-# GitHub Actions workflow for building, pushing Docker image to Azure Container Registry,
-# and deploying the HelloWorld hosted agent sample at enterprise scale.
+# GitHub Actions workflow for building, pushing the sample agent image to ACR,
+# and deploying it to Azure AI Foundry Hosted Agents.
 #
 # Architecture:
-# - Infrastructure: Terraform-managed (ACR, Key Vault, Foundry account + project)
-# - CI/CD: GitHub Actions with dedicated runners (not local developer machines)
+# - Infrastructure: Terraform-managed (ACR, Storage, Key Vault, Foundry account + project)
+# - CI/CD: GitHub Actions with OIDC
 # - Deployment: Azure Developer CLI (azd) for agent deployment to Foundry
+# - Post-deploy: grant agent instance identity Storage Blob Data Contributor + Key Vault Secrets User
 #
 # Prerequisites:
 # - Terraform infrastructure must be deployed first (ACR, Foundry project)
 # - GitHub OIDC configured for Azure authentication
-# - Service principal with appropriate RBAC roles
 #
 # References:
 # - https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli
@@ -20,15 +20,6 @@ name: Docker Build, Push and Deploy - Hosted Agents
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to deploy to (dev, staging, prod)'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - staging
-        - prod
       skip-deploy:
         description: 'Skip hosted agent deployment (build and push only)'
         required: false
@@ -46,14 +37,15 @@ env:
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   AZURE_LOCATION: "westeurope"
   LOCATION_SHORT: "weu"
-  AGENT_NAME: "hello-world-dotnet-responses"
+  LAB_ENVIRONMENT: "dev"
+  AGENT_NAME: "storage-kv-agent"
   FOUNDRY_PROJECT_NAME: "hosted-agents-project"
 
 jobs:
   validate-infra:
     name: Validate Infrastructure
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    environment: dev
     permissions:
       id-token: write
       contents: read
@@ -75,10 +67,8 @@ jobs:
     - name: Check if Azure Container Registry exists
       id: check-acr
       run: |
-        # Construct the full ACR name based on the pattern in Terraform
         # Pattern: acr{workload_no_hyphens}{environment}{location_short} (e.g., acrhostedagentsdevweu)
-        # ACR names can only contain alphanumeric characters
-        FULL_ACR_NAME="acrhostedagents${{ github.event.inputs.environment }}${{ env.LOCATION_SHORT }}"
+        FULL_ACR_NAME="acrhostedagents${{ env.LAB_ENVIRONMENT }}${{ env.LOCATION_SHORT }}"
         echo "Checking if ACR exists: $FULL_ACR_NAME"
         
         if az acr show --name "$FULL_ACR_NAME" --output none 2>/dev/null; then
@@ -98,9 +88,8 @@ jobs:
         set -euo pipefail
         # Resource name is cog-{workload}-{env}-{region}, but the DNS hostname
         # uses custom_subdomain_name = {workload}-{env}-{region} (no cog- prefix).
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
-        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        RG_NAME="rg-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
+        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
 
         echo "Looking up Foundry account: $FOUNDRY_ACCOUNT_NAME in $RG_NAME"
         if ! az cognitiveservices account show \
@@ -138,7 +127,7 @@ jobs:
     needs: validate-infra
     if: needs.validate-infra.outputs.acr_exists == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    environment: dev
     permissions:
       id-token: write
       contents: read
@@ -174,7 +163,7 @@ jobs:
       working-directory: labs/hosted-agents/src
       run: |
         set -euo pipefail
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        ENVIRONMENT="${{ env.LAB_ENVIRONMENT }}"
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
 
         # azure.yaml is the azd project; it is checked in. The .azure/ env
@@ -199,6 +188,22 @@ jobs:
         azd ai project set "$FOUNDRY_ENDPOINT" --no-prompt
 
         PROJECT_ID="/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}/providers/Microsoft.CognitiveServices/accounts/cog-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        # Storage account name includes a 4-digit random suffix from Terraform
+        # (sthostedagents{env}{loc}####). Resolve the live account in the RG.
+        STORAGE_ACCOUNT_NAME=$(az storage account list \
+          --resource-group "$RG_NAME" \
+          --query "sort_by([?starts_with(name, 'sthostedagents')], &creationTime)[-1].name" \
+          -o tsv)
+        if [ -z "$STORAGE_ACCOUNT_NAME" ] || [ "$STORAGE_ACCOUNT_NAME" = "None" ]; then
+          echo "::error::No storage account starting with 'sthostedagents' found in $RG_NAME."
+          echo "Run the Terraform Deploy - Hosted Agents workflow first."
+          exit 1
+        fi
+        KEY_VAULT_NAME="kv-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        KEY_VAULT_URI="https://${KEY_VAULT_NAME}.vault.azure.net/"
+        echo "Resolved storage account: $STORAGE_ACCOUNT_NAME"
+
         # azd deploy reads these from the active azd environment (.azure/<env>/.env),
         # not from global config alone — FOUNDRY_PROJECT_ENDPOINT is required.
         azd env set AZURE_LOCATION "${{ env.AZURE_LOCATION }}" --no-prompt
@@ -206,10 +211,16 @@ jobs:
         azd env set FOUNDRY_PROJECT_ENDPOINT "$FOUNDRY_ENDPOINT" --no-prompt
         azd env set FOUNDRY_PROJECT_ARM_ID "${PROJECT_ID}" --no-prompt
         azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME "gpt-5-mini" --no-prompt
+        azd env set AZURE_STORAGE_ACCOUNT_NAME "$STORAGE_ACCOUNT_NAME" --no-prompt
+        azd env set AZURE_STORAGE_CONTAINER_NAME "agent-notes" --no-prompt
+        azd env set AZURE_KEY_VAULT_URI "$KEY_VAULT_URI" --no-prompt
+        azd env set AZURE_KEY_VAULT_SECRET_NAME "agent-demo-message" --no-prompt
 
         echo "AZURE_LOCATION=${{ env.AZURE_LOCATION }}" >> $GITHUB_ENV
         echo "AZURE_AI_PROJECT_ID=${PROJECT_ID}" >> $GITHUB_ENV
         echo "FOUNDRY_PROJECT_ENDPOINT=$FOUNDRY_ENDPOINT" >> $GITHUB_ENV
+        echo "AZURE_STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
+        echo "AZURE_KEY_VAULT_URI=$KEY_VAULT_URI" >> $GITHUB_ENV
         azd env get-values
 
     - name: Set up Docker Buildx
@@ -235,8 +246,8 @@ jobs:
       uses: docker/build-push-action@v5
       id: build-push
       with:
-        context: labs/hosted-agents/src/src/hello-world-dotnet-responses
-        file: labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile
+        context: labs/hosted-agents/src/storage-kv-agent
+        file: labs/hosted-agents/src/storage-kv-agent/Dockerfile
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -245,25 +256,32 @@ jobs:
       if: steps.build-push.outcome == 'success' || github.event.inputs.deploy-only == 'true'
       id: get-tag
       run: |
-        # If we built, use the first tag; if deploy-only, use 'latest'
+        set -euo pipefail
+        # Prefer an immutable digest so Foundry always pulls the new image.
+        # Re-deploying the same mutable tag (e.g. hosted-agents-storage) can leave
+        # the previous digest running even when ACR was updated.
         if [ "${{ github.event.inputs.deploy-only }}" = "true" ]; then
-          TAG="latest"
+          IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:latest"
+        elif [ -n "${{ steps.build-push.outputs.digest }}" ]; then
+          IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}@${{ steps.build-push.outputs.digest }}"
         else
-          TAGS="${{ steps.meta.outputs.tags }}"
-          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
-          LAST_TAG=${TAG_ARRAY[0]}
-          TAG=${LAST_TAG#*:}
+          # Fallback: immutable sha-* tag from docker/metadata-action
+          TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed -n 's|^[^:]*:\(sha-.*\)$|\1|p' | head -1)
+          if [ -z "$TAG" ]; then
+            TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed -n 's|^[^:]*:\(.*\)$|\1|p' | head -1)
+          fi
+          IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${TAG}"
         fi
-        echo "Using tag: $TAG"
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Using image: $IMAGE_REF"
+        echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
 
     - name: Deploy hosted agent
       if: github.event.inputs.skip-deploy == 'false'
       id: deploy-agent
       working-directory: labs/hosted-agents/src
       env:
-        IMAGE_REF: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}
-        AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
+        IMAGE_REF: ${{ steps.get-tag.outputs.image_ref }}
+        AZURE_ENV_NAME: ${{ env.LAB_ENVIRONMENT }}
         FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
       run: |
         set -euo pipefail
@@ -281,7 +299,7 @@ jobs:
         with open('azure.yaml', 'r') as f:
             data = yaml.safe_load(f)
 
-        svc = data['services']['hello-world-dotnet-responses']
+        svc = data['services']['storage-kv-agent']
         svc['language'] = 'docker'
         svc['image'] = os.environ['IMAGE_REF']
         for key in ['project', 'codeConfiguration', 'docker']:
@@ -292,4 +310,73 @@ jobs:
         EOF
 
         # Deploy using azd deploy which will use the image from azure.yaml
-        azd deploy hello-world-dotnet-responses -e "$AZURE_ENV_NAME" --no-prompt --output json
+        azd deploy storage-kv-agent -e "$AZURE_ENV_NAME" --no-prompt --output json
+
+    - name: Grant agent identity Storage and Key Vault access
+      if: github.event.inputs.skip-deploy == 'false' && steps.deploy-agent.outcome == 'success'
+      env:
+        FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
+      run: |
+        set -euo pipefail
+        ENVIRONMENT="${{ env.LAB_ENVIRONMENT }}"
+        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        STORAGE_ACCOUNT_NAME=$(az storage account list \
+          --resource-group "$RG_NAME" \
+          --query "sort_by([?starts_with(name, 'sthostedagents')], &creationTime)[-1].name" \
+          -o tsv)
+        if [ -z "$STORAGE_ACCOUNT_NAME" ] || [ "$STORAGE_ACCOUNT_NAME" = "None" ]; then
+          echo "::error::No storage account starting with 'sthostedagents' found in $RG_NAME."
+          exit 1
+        fi
+        KEY_VAULT_NAME="kv-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        AGENT_NAME="${{ env.AGENT_NAME }}"
+        API_VERSION="v1"
+        echo "Resolved storage account: $STORAGE_ACCOUNT_NAME"
+
+        echo "Looking up agent instance identity for $AGENT_NAME"
+        AGENT_IDENTITY=$(az rest --method GET \
+          --url "${FOUNDRY_PROJECT_ENDPOINT}/agents/${AGENT_NAME}?api-version=${API_VERSION}" \
+          --resource "https://ai.azure.com" \
+          --query "instance_identity.principal_id" \
+          --output tsv)
+
+        if [ -z "$AGENT_IDENTITY" ] || [ "$AGENT_IDENTITY" = "None" ]; then
+          echo "::error::Could not resolve instance_identity.principal_id for agent '$AGENT_NAME'."
+          exit 1
+        fi
+
+        echo "Agent identity principal ID: $AGENT_IDENTITY"
+
+        STORAGE_ID=$(az storage account show \
+          --name "$STORAGE_ACCOUNT_NAME" \
+          --resource-group "$RG_NAME" \
+          --query id -o tsv)
+        KV_ID=$(az keyvault show \
+          --name "$KEY_VAULT_NAME" \
+          --resource-group "$RG_NAME" \
+          --query id -o tsv)
+
+        assign_if_missing() {
+          local role="$1"
+          local scope="$2"
+          if az role assignment list \
+            --assignee-object-id "$AGENT_IDENTITY" \
+            --scope "$scope" \
+            --role "$role" \
+            --query '[0].id' -o tsv | grep -q .; then
+            echo "Already assigned: $role on $scope"
+            return 0
+          fi
+          echo "Assigning: $role"
+          az role assignment create \
+            --assignee-object-id "$AGENT_IDENTITY" \
+            --assignee-principal-type ServicePrincipal \
+            --role "$role" \
+            --scope "$scope" \
+            --output none
+        }
+
+        assign_if_missing "Storage Blob Data Contributor" "$STORAGE_ID"
+        assign_if_missing "Key Vault Secrets User" "$KV_ID"
+
+        echo "Agent identity RBAC grants complete."

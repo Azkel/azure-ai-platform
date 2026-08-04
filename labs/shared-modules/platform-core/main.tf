@@ -210,6 +210,14 @@ resource "azurerm_cognitive_account" "foundry" {
     type = "SystemAssigned"
   }
 
+  # Foundry + network injection teardown can take a long time before soft-delete
+  # reaches a terminal state (purge is handled separately by lab workflows).
+  timeouts {
+    create = "60m"
+    update = "60m"
+    delete = "60m"
+  }
+
   depends_on = [azurerm_subnet.subnet]
 }
 

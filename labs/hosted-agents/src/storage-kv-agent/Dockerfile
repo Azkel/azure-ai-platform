@@ -9,4 +9,4 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
 WORKDIR /app
 COPY --from=build /app .
 EXPOSE 8088
-ENTRYPOINT ["dotnet", "HelloWorld.dll"]
+ENTRYPOINT ["dotnet", "StorageKvAgent.dll"]
