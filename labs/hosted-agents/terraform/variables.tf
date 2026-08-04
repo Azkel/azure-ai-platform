@@ -66,3 +66,34 @@ variable "additional_key_vault_admin_principal_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "agent_demo_secret_value" {
+  description = "User-provided demo secret value stored in Key Vault and read by the hosted agent at runtime via managed identity."
+  type        = string
+  default     = "Contoso Labs — greet callers as a concise platform engineer."
+  sensitive   = true
+}
+
+variable "agent_demo_secret_name" {
+  description = "Key Vault secret name the hosted agent reads at runtime."
+  type        = string
+  default     = "agent-demo-message"
+}
+
+variable "storage_blob_container_name" {
+  description = "Blob container used by the hosted agent for note persistence."
+  type        = string
+  default     = "agent-notes"
+}
+
+variable "additional_storage_blob_data_contributor_principal_ids" {
+  description = "Extra Entra object IDs granted Storage Blob Data Contributor (e.g. local developers). The hosted agent identity is granted post-deploy by the Docker workflow."
+  type        = list(string)
+  default     = []
+}
+
+variable "additional_key_vault_secrets_user_principal_ids" {
+  description = "Extra Entra object IDs granted Key Vault Secrets User (e.g. local developers). The hosted agent identity is granted post-deploy by the Docker workflow."
+  type        = list(string)
+  default     = []
+}

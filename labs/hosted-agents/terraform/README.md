@@ -21,7 +21,8 @@ Defines the lab configuration using the shared `platform-core` module. This is w
 - Configure network settings (VNet, subnet)
 - Configure Log Analytics settings
 - Configure Microsoft Foundry settings
-- Define outputs for other modules to consume
+- Provision ACR, Key Vault (incl. agent demo secret), and agent data Storage Account
+- Define outputs for other modules / deploy workflows to consume
 
 ### providers.tf
 

@@ -1,21 +1,25 @@
-# Hosted Agents - HelloWorld Sample
+# Hosted Agents - Storage + Key Vault Sample
 
-The files in this directory are copied from the Microsoft Foundry samples repository.
-
-**Source:** https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own/responses/HelloWorld
-
-This is a minimal "hello world" hosted agent using the **Bring Your Own** approach with the **Responses protocol** in C#.
+Based on the Microsoft Foundry [bring-your-own HelloWorld](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own/responses/HelloWorld) Responses sample, extended to demonstrate managed-identity access to Azure Storage and Key Vault.
 
 ## Files
 
-- `README.foundry-sample.md` - Original sample documentation
-- `azure.yaml` - Azure Developer CLI configuration
+- `README.foundry-sample.md` - Original Foundry sample documentation
+- `azure.yaml` - Azure Developer CLI configuration (env vars for model, storage, Key Vault)
 - `AGENTS.md` - Coding agent instructions
 - `CLAUDE.md` - Claude Code configuration
 - `src/hello-world-dotnet-responses/` - C# source code
-  - `Program.cs` - Main agent handler
+  - `Program.cs` - Responses handler with Blob + SecretClient integration
   - `HelloWorld.csproj` - .NET project file
   - `Dockerfile` - Container build configuration
   - `.env.example` - Environment variable template
   - `.dockerignore` - Docker ignore patterns
   - `.azdignore` - Azure Developer CLI ignore patterns
+
+## Runtime behavior
+
+1. `SecretClient` reads the user-provided demo secret from Key Vault
+2. `BlobContainerClient` writes a turn note under `notes/` and lists recent blobs
+3. Foundry Responses API generates the reply with that context in instructions
+
+All Azure auth uses `DefaultAzureCredential` (agent instance identity when hosted).

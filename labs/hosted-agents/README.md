@@ -1,18 +1,20 @@
 # Hosted Agents Lab
 
-This lab demonstrates how to deploy infrastructure for **Azure AI Foundry Hosted Agents** using Terraform and GitHub Actions, including a sample HelloWorld agent.
+This lab demonstrates how to deploy infrastructure for **Azure AI Foundry Hosted Agents** using Terraform and GitHub Actions, including a sample agent that integrates **Azure Storage** and **Key Vault** via managed identity.
 
 ## Overview
 
-Azure AI Foundry Hosted Agents provide a managed environment for running AI workloads with built-in security, scaling, and integration with Azure AI services. This lab provides both the infrastructure foundation and a sample agent to get started quickly.
+Azure AI Foundry Hosted Agents provide a managed environment for running AI workloads with built-in security, scaling, and integration with Azure AI services. This lab provides both the infrastructure foundation and a sample agent that shows how the agent instance identity accesses Azure data-plane resources with Azure RBAC (no storage keys or Key Vault secrets in the image).
 
-## Sample: HelloWorld Hosted Agent
+## Sample: Hosted Agent with Storage + Key Vault
 
-This lab includes a **HelloWorld** sample agent that demonstrates:
+This lab includes a **BYO Responses** sample agent (based on the [Foundry HelloWorld sample](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own)) that demonstrates:
 - **Bring Your Own (BYO)** approach using the **Responses protocol**
 - **C#** implementation using `.NET 10` and the `Azure.AI.AgentServer.Responses` SDK
 - **Docker** containerization for deployment to Foundry Agent Service
 - Integration with **Microsoft Foundry** models via the Responses API
+- **Azure Key Vault** secret retrieval with `DefaultAzureCredential` (agent instance identity)
+- **Azure Storage** blob note persistence with the same managed identity
 
 ### Sample Location
 - **Source code**: `labs/hosted-agents/src/`
@@ -23,22 +25,47 @@ This lab includes a **HelloWorld** sample agent that demonstrates:
 ### Sample Features
 - Forwards user input to a Foundry model via the Responses API
 - Maintains conversation history across turns
+- Reads a **user-provided demo secret** from Key Vault and injects it into model instructions
+- Writes each turn to a blob under `notes/` and lists recent note names for context
 - Handles streaming responses with SSE (Server-Sent Events)
 - Includes built-in health endpoints (`/readiness`)
 - Automatically integrates with Application Insights for telemetry
 
 ### What the Sample Does
-The HelloWorld agent:
+On each request the agent:
 1. Receives a user message via the `/responses` endpoint
-2. Retrieves conversation history using `ResponseContext.GetHistoryAsync()`
-3. Constructs a prompt with the full conversation context
-4. Calls a Foundry model (e.g., `gpt-5-mini`) via the Responses API
-5. Returns the model's response to the user
+2. Reads `agent-demo-message` (configurable) from Key Vault using managed identity
+3. Persists the turn to Azure Blob Storage (`agent-notes` container)
+4. Retrieves conversation history using `ResponseContext.GetHistoryAsync()`
+5. Calls a Foundry model (e.g. `gpt-5-mini`) with instructions enriched by the Key Vault value and blob context
+6. Returns the model's response to the user
 
-**Required Environment Variables** (auto-injected by Foundry):
-- `FOUNDRY_PROJECT_ENDPOINT` - Foundry project endpoint
+**Required Environment Variables**:
+- `FOUNDRY_PROJECT_ENDPOINT` - Foundry project endpoint (auto-injected when hosted)
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (default: `gpt-5-mini`)
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` - App Insights connection string (auto-injected)
+- `APPLICATIONINSIGHTS_CONNECTION_STRING` - App Insights connection string (auto-injected when hosted)
+- `AZURE_STORAGE_ACCOUNT_NAME` - Agent data storage account
+- `AZURE_STORAGE_CONTAINER_NAME` - Blob container (default: `agent-notes`)
+- `AZURE_KEY_VAULT_URI` - Key Vault URI
+- `AZURE_KEY_VAULT_SECRET_NAME` - Demo secret name (default: `agent-demo-message`)
+
+### Managed identity and RBAC
+
+Hosted agents authenticate with a dedicated **agent instance identity** created at deploy time. Terraform cannot know that principal ID ahead of time, so:
+
+| When | What |
+|------|------|
+| **Terraform apply** | Creates Storage Account + container, Key Vault secret, and optional contributor grants for local developers (`additional_*_principal_ids`) |
+| **Docker deploy workflow** | After `azd deploy`, looks up `instance_identity.principal_id` and assigns **Storage Blob Data Contributor** + **Key Vault Secrets User** |
+
+To change the demo message the agent reads, set Terraform variable `agent_demo_secret_value`, or update the secret in the portal / CLI after apply:
+
+```bash
+az keyvault secret set \
+  --vault-name kv-hosted-agents-dev-weu \
+  --name agent-demo-message \
+  --value "Your custom operator message"
+```
 
 ## What This Lab Provides
 
@@ -54,7 +81,8 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 
 **Lab-Specific Resources:**
 - **Azure Container Registry** for Docker images
-- **Azure Key Vault** for secrets management (using Azure RBAC)
+- **Azure Key Vault** for secrets management (using Azure RBAC), including App Insights connection string and the user-provided agent demo secret
+- **Azure Storage Account** (Azure AD auth only) with `agent-notes` blob container for agent persistence
 - **Microsoft Foundry Project** for hosting agents
 
 ## Prerequisites
@@ -120,7 +148,7 @@ Additionally include:
 **Pull Request:**
 - Changes to Terraform files will automatically trigger a `terraform plan` for review
 
-**Important:** The infrastructure (ACR, Foundry account with project management enabled) must be deployed before building and deploying the agent.
+**Important:** The infrastructure (ACR, Storage, Key Vault, Foundry account with project management enabled) must be deployed before building and deploying the agent.
 
 **Note:** The Foundry Cognitive Account requires `allowProjectManagement=true` to create projects. This is automatically configured by the updated Terraform configuration. If you have existing infrastructure deployed with older configuration, you may need to:
 - Run `terraform apply` again on the updated configuration to enable project management
@@ -136,6 +164,7 @@ After infrastructure is deployed, build and deploy the HelloWorld agent:
    - Build the Docker image from the sample source
    - Push it to Azure Container Registry
    - Deploy it to Microsoft Foundry
+   - Grant the agent instance identity access to Storage and Key Vault
 
 ## Terraform Configuration
 
@@ -148,6 +177,16 @@ The Terraform configuration is in the `terraform/` subdirectory:
 │   ├── providers.tf     # Terraform providers
 │   └── variables.tf     # Environment variables
 ```
+
+Useful variables for this sample:
+
+| Variable | Purpose |
+|----------|---------|
+| `agent_demo_secret_value` | User-provided text stored in Key Vault for the agent to read |
+| `agent_demo_secret_name` | Secret name (default `agent-demo-message`) |
+| `storage_blob_container_name` | Blob container (default `agent-notes`) |
+| `additional_storage_blob_data_contributor_principal_ids` | Local developer object IDs for blob access |
+| `additional_key_vault_secrets_user_principal_ids` | Local developer object IDs for secret read |
 
 ## Module Configuration
 
@@ -190,6 +229,7 @@ The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](
 2. **Builds Docker image** - Uses `docker/build-push-action` to build the agent image from `labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile`
 3. **Pushes to ACR** - Tags and pushes the image to Azure Container Registry with multiple tags (branch, tag, sha, latest)
 4. **Deploys to Foundry** - Uses `azd ai agent deploy` to deploy the agent to the Foundry project
+5. **Grants RBAC** - Assigns Storage Blob Data Contributor and Key Vault Secrets User to the agent instance identity
 
 **Build options:**
 - **Full pipeline**: Builds, pushes, and deploys the agent
@@ -198,12 +238,15 @@ The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](
 
 **Naming convention:**
 - ACR name: `acr{workload_no_hyphens}{environment}{location_short}` (e.g., `acrhostedagentsdevweu`)
+- Storage account: `st{workload_no_hyphens}{environment}{location_short}` (e.g., `sthostedagentsdevweu`)
+- Key Vault: `kv-{workload}-{environment}-{location_short}` (e.g., `kv-hosted-agents-dev-weu`)
 - Agent name: `hello-world-dotnet-responses`
 - Image: `{ACR}.azurecr.io/hello-world-dotnet-responses:{tag}`
 
 **References:**
 - [Set up CI/CD with Azure Developer CLI](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli)
 - [Deploy from private ACR](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry)
+- [Manage hosted agent identity / RBAC](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/manage-hosted-agent)
 
 ## Outputs
 
@@ -222,6 +265,8 @@ After deployment, the Terraform module provides these outputs:
 **Lab-specific outputs:**
 - `container_registry_*` - Azure Container Registry details
 - `key_vault_*` - Azure Key Vault details
+- `agent_demo_secret_name` - Demo secret name read by the agent
+- `storage_account_*` / `storage_blob_container_name` - Agent data storage details
 - `foundry_project_*` - Microsoft Foundry project details (endpoint, ID, name)
 
 ## Cost Optimization
@@ -230,11 +275,13 @@ This lab is configured for minimal cost:
 
 - **Log Analytics**: 30-day retention (minimum)
 - **Foundry SKU**: S0 (development tier)
-- **Location**: Poland Central
+- **Storage**: Standard LRS, shared access keys disabled
+- **Location**: West Europe
 
 For production, consider:
 - Log Analytics: 365-day retention
 - Foundry SKU: F0 or higher
+- Private endpoints / network rules for Storage and Key Vault
 - Additional monitoring and security features
 
 ## Cleanup
@@ -242,7 +289,7 @@ For production, consider:
 To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC via the cleanup workflow. You can also manually trigger destruction.
 
 **Important Note on Resource Deletion:**
-- **Immediately deleted**: Resource Group, VNet, Subnet
+- **Immediately deleted**: Resource Group, VNet, Subnet, Storage Account
 - **7-day soft delete retention (auto-purged after 7 days)**:
   - **Microsoft Foundry Cognitive Account**: Azure enforces a mandatory 7-day soft delete retention that cannot be disabled. After `terraform destroy`, the account will be in soft-delete state for 7 days before automatic purge.
   - **Azure Key Vault**: Has a minimum 7-day soft delete retention (Azure requirement) with `purge_protection_enabled = false`, allowing automatic purge after 7 days.
@@ -271,6 +318,8 @@ To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC 
 - [Hosted Agents Overview](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents)
 - [Deploy Hosted Agent from Private ACR](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry)
 - [Set up CI/CD with Azure Developer CLI](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli)
+- [Manage hosted agent (identity / RBAC)](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/manage-hosted-agent)
+- [Foundry BYO C# samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own)
 
 ### Azure Developer CLI
 - [Install Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
@@ -336,6 +385,8 @@ curl -X POST "$FOUNDRY_ENDPOINT/agents/hello-world-dotnet-responses/endpoint/pro
   }'
 ```
 
+After a successful invoke, confirm a blob appears under `notes/` in the `agent-notes` container, and that the model reply reflects the Key Vault demo message.
+
 ### 3. Monitor with Application Insights
 
 The agent automatically sends telemetry to Application Insights. To view:
@@ -367,7 +418,7 @@ requests
 
 // Traces from the agent
 traces
-| where message contains "HelloWorldHandler"
+| where message contains "AzureIntegrationHandler"
 | order by timestamp desc
 ```
 
@@ -400,7 +451,9 @@ dotnet restore
 
 # Copy .env.example to .env and set required variables
 cp .env.example .env
-# Edit .env with your Foundry project endpoint and model deployment name
+# Edit .env with Foundry endpoint, model name, storage account, Key Vault URI
+# Grant your user Storage Blob Data Contributor + Key Vault Secrets User
+# (or pass your object ID via the Terraform additional_*_principal_ids variables)
 
 # Run locally
 dotnet run
@@ -424,6 +477,17 @@ curl -X POST http://localhost:8088/responses \
 - Verify ACR exists and is accessible
 - Check role assignments on ACR (AcrPush for deploy, AcrPull for agent identity)
 - Run `azd ai agent doctor` for RBAC diagnosis
+
+**Storage or Key Vault 403 from the agent:**
+- Confirm the Docker deploy workflow completed the post-deploy RBAC step
+- Check the agent identity has Storage Blob Data Contributor on the storage account and Key Vault Secrets User on the vault:
+  ```bash
+  AGENT_IDENTITY=$(az rest --method GET \
+    --url "$FOUNDRY_ENDPOINT/agents/hello-world-dotnet-responses?api-version=v1" \
+    --resource "https://ai.azure.com" \
+    --query "instance_identity.principal_id" -o tsv)
+  az role assignment list --assignee-object-id "$AGENT_IDENTITY" --all -o table
+  ```
 
 **Image pull failures:**
 - Verify the image tag exists in ACR

@@ -23,9 +23,9 @@ module "platform_core" {
   log_analytics_retention_in_days = 30 # Cost-optimized for labs
 
   # Microsoft Foundry configuration
-  foundry_sku                                = "S0" # Cost-optimized for labs; use F0 or higher for production
-  additional_foundry_user_principal_ids      = var.additional_foundry_user_principal_ids
-  foundry_agent_network_injection_enabled    = true
+  foundry_sku                             = "S0" # Cost-optimized for labs; use F0 or higher for production
+  additional_foundry_user_principal_ids   = var.additional_foundry_user_principal_ids
+  foundry_agent_network_injection_enabled = true
 }
 
 # Azure Container Registry for hosted-agents workload
@@ -117,6 +117,78 @@ resource "azurerm_key_vault_secret" "appinsights_connection_string" {
     azurerm_role_assignment.kv_admin,
     azurerm_role_assignment.additional_kv_admins,
   ]
+}
+
+# User-provided demo secret read by the hosted agent via SecretClient + MI.
+# Override agent_demo_secret_value (TF var / CI) or update the secret in portal/CLI.
+resource "azurerm_key_vault_secret" "agent_demo_message" {
+  name         = var.agent_demo_secret_name
+  value        = var.agent_demo_secret_value
+  key_vault_id = azurerm_key_vault.kv.id
+  content_type = "text/plain"
+
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+    Purpose     = "agent-demo"
+  }, var.tags)
+
+  depends_on = [
+    azurerm_role_assignment.kv_admin,
+    azurerm_role_assignment.additional_kv_admins,
+  ]
+}
+
+# Workload storage for agent note persistence (Azure AD auth only — no account keys).
+# Storage account names: 3–24 lowercase alphanumeric chars.
+resource "azurerm_storage_account" "agent_data" {
+  name                            = "st${local.acr_safe_workload_name}${var.environment}${local.location_short}"
+  resource_group_name             = module.platform_core.resource_group_name
+  location                        = module.platform_core.resource_group_location
+  account_tier                    = "Standard"
+  account_replication_type        = "LRS"
+  account_kind                    = "StorageV2"
+  min_tls_version                 = "TLS1_2"
+  shared_access_key_enabled       = false
+  allow_nested_items_to_be_public = false
+  https_traffic_only_enabled      = true
+  public_network_access_enabled   = true
+
+  blob_properties {
+    versioning_enabled = false
+  }
+
+  tags = merge({
+    Environment = var.environment
+    Workload    = var.workload_name
+    Purpose     = "agent-data"
+  }, var.tags)
+}
+
+resource "azurerm_storage_container" "agent_notes" {
+  name                  = var.storage_blob_container_name
+  storage_account_id    = azurerm_storage_account.agent_data.id
+  container_access_type = "private"
+}
+
+# Local developers / operators can read/write blobs when listed here.
+# The hosted agent's instance identity is assigned Storage Blob Data Contributor
+# after azd deploy (see docker-build-push-hosted-agents.yml) because that
+# principal is created at agent deploy time, not by Terraform.
+resource "azurerm_role_assignment" "additional_storage_blob_data_contributors" {
+  for_each = toset(var.additional_storage_blob_data_contributor_principal_ids)
+
+  scope                = azurerm_storage_account.agent_data.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = each.value
+}
+
+resource "azurerm_role_assignment" "additional_kv_secrets_users" {
+  for_each = toset(var.additional_key_vault_secrets_user_principal_ids)
+
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = each.value
 }
 
 # Microsoft Foundry Project
@@ -314,6 +386,32 @@ output "appinsights_connection_string_secret_id" {
   description = "Key Vault secret resource ID for the Application Insights connection string"
   value       = azurerm_key_vault_secret.appinsights_connection_string.id
   sensitive   = true
+}
+
+output "agent_demo_secret_name" {
+  description = "Key Vault secret name read by the hosted agent at runtime"
+  value       = azurerm_key_vault_secret.agent_demo_message.name
+}
+
+# Azure Storage outputs (agent data plane via managed identity)
+output "storage_account_id" {
+  description = "The ID of the agent data storage account"
+  value       = azurerm_storage_account.agent_data.id
+}
+
+output "storage_account_name" {
+  description = "The name of the agent data storage account"
+  value       = azurerm_storage_account.agent_data.name
+}
+
+output "storage_blob_endpoint" {
+  description = "Blob endpoint of the agent data storage account"
+  value       = azurerm_storage_account.agent_data.primary_blob_endpoint
+}
+
+output "storage_blob_container_name" {
+  description = "Blob container used by the hosted agent for notes"
+  value       = azurerm_storage_container.agent_notes.name
 }
 
 # Application Insights outputs (from platform-core module)
