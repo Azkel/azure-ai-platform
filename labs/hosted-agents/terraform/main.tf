@@ -261,6 +261,26 @@ resource "azapi_resource" "foundry_project" {
   depends_on = [module.platform_core.foundry_user_role_assignment_id]
 }
 
+# Model deployment used by the hosted agent (AZURE_AI_MODEL_DEPLOYMENT_NAME).
+# Account-scoped on the Foundry AIServices resource — required before agent invoke.
+resource "azurerm_cognitive_deployment" "agent_model" {
+  name                 = var.model_deployment_name
+  cognitive_account_id = module.platform_core.foundry_id
+
+  model {
+    format  = var.model_format
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = var.model_sku_name
+    capacity = var.model_sku_capacity
+  }
+
+  depends_on = [module.platform_core]
+}
+
 locals {
   foundry_project_principal_id = azapi_resource.foundry_project.output.identity.principalId
 }
@@ -522,4 +542,14 @@ output "foundry_project_name" {
 output "foundry_project_endpoint" {
   description = "The endpoint of the Microsoft Foundry project"
   value       = local.foundry_project_endpoint
+}
+
+output "model_deployment_name" {
+  description = "Foundry model deployment name used by the hosted agent"
+  value       = azurerm_cognitive_deployment.agent_model.name
+}
+
+output "model_deployment_id" {
+  description = "Resource ID of the Foundry model deployment"
+  value       = azurerm_cognitive_deployment.agent_model.id
 }

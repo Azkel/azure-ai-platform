@@ -83,8 +83,7 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 - **Azure Key Vault** for secrets management (using Azure RBAC), including App Insights connection string and the user-provided agent demo secret
 - **Azure Storage Account** (Azure AD auth only) with `agent-notes` blob container for agent persistence
 - **Microsoft Foundry Project** for hosting agents
-
-> Model deployments (e.g. `gpt-5-mini`) are **not** managed by Terraform — create them in the Foundry portal or via `azd` / Azure CLI so quota/region issues do not block infra applies. The Docker workflow still sets `AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5-mini`.
+- **Model deployment** (`gpt-5-mini` by default) on the Foundry account for agent inference
 
 ## Prerequisites
 
