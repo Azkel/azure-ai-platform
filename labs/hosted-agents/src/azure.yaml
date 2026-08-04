@@ -29,7 +29,7 @@ services:
             resources:
                 cpu: "0.5"
                 memory: 1Gi
-        description: BYO Responses agent that calls a Foundry model, reads a user-provided Key Vault secret, and persists turn notes to Azure Storage via managed identity.
+        description: BYO Responses agent that calls a Foundry model and uses function tools for Key Vault + Storage access via managed identity (on demand).
         displayName: Storage + Key Vault (.NET Responses)
         environmentVariables:
             - name: AZURE_AI_MODEL_DEPLOYMENT_NAME

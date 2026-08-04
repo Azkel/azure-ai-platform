@@ -4,11 +4,14 @@
  * Hosted agent — Bring Your Own Responses (C#) with Azure Storage + Key Vault
  *
  * Extends the Foundry HelloWorld BYO sample to demonstrate managed-identity
- * access to Azure resources from a hosted agent container:
+ * access to Azure resources from a hosted agent container via function tools:
  *
- *   1. Read a user-provided demo message from Key Vault (SecretClient + MI)
- *   2. Persist each turn as a blob note (BlobContainerClient + MI)
- *   3. Forward the enriched prompt to a Foundry model via the Responses API
+ *   - get_demo_secret   — read a user-provided demo message from Key Vault
+ *   - persist_note      — write a note blob to Azure Storage
+ *   - list_recent_notes — list recent note blob names
+ *
+ * The model calls these tools only when needed; ordinary Q&A does not hit
+ * Storage or Key Vault.
  *
  * Authentication uses DefaultAzureCredential:
  *   - Hosted: agent instance identity (RBAC assigned post-deploy)
@@ -31,6 +34,7 @@
  */
 
 using System.Text;
+using System.Text.Json;
 using Azure.AI.AgentServer.Responses;
 using Azure.AI.AgentServer.Responses.Models;
 using Azure.AI.Extensions.OpenAI;
@@ -98,7 +102,8 @@ ResponsesServer.Run<AzureIntegrationHandler>(configure: builder =>
 public sealed record AgentAzureOptions(string DemoSecretName);
 
 /// <summary>
-/// Responses handler that reads a Key Vault secret, writes a blob note, then calls the Foundry model.
+/// Responses handler that exposes Key Vault and Storage as function tools
+/// and runs a tool loop so the model invokes them only when needed.
 /// </summary>
 public sealed class AzureIntegrationHandler(
     ProjectResponsesClient responsesClient,
@@ -107,9 +112,63 @@ public sealed class AzureIntegrationHandler(
     AgentAzureOptions azureOptions,
     ILogger<AzureIntegrationHandler> logger) : ResponseHandler
 {
+    private const int MaxToolRounds = 5;
+
     private const string BaseSystemPrompt =
         "You are a helpful AI assistant for an Azure AI platform lab. Be concise and informative. " +
-        "When relevant, acknowledge that you can persist notes to Azure Storage and read configuration from Key Vault via managed identity.";
+        "You have tools for Azure Key Vault and Azure Blob Storage via managed identity. " +
+        "Call get_demo_secret only when the user asks about the operator/demo Key Vault message or configuration. " +
+        "Call persist_note only when the user asks to save, remember, or persist something. " +
+        "Call list_recent_notes only when the user asks about stored notes or recent blobs. " +
+        "Do not call these tools for ordinary questions.";
+
+    private static readonly ResponseTool GetDemoSecretTool = ResponseTool.CreateFunctionTool(
+        functionName: "get_demo_secret",
+        functionParameters: BinaryData.FromString("""
+            {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+            """),
+        strictModeEnabled: true,
+        functionDescription:
+            "Read the operator-provided demo message from Azure Key Vault. " +
+            "Use only when the user asks about the Key Vault demo secret or configuration message.");
+
+    private static readonly ResponseTool PersistNoteTool = ResponseTool.CreateFunctionTool(
+        functionName: "persist_note",
+        functionParameters: BinaryData.FromString("""
+            {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "Text to store as a blob note under notes/."
+                }
+              },
+              "required": ["content"],
+              "additionalProperties": false
+            }
+            """),
+        strictModeEnabled: true,
+        functionDescription:
+            "Persist a text note to Azure Blob Storage. " +
+            "Use only when the user asks to save, remember, or persist content.");
+
+    private static readonly ResponseTool ListRecentNotesTool = ResponseTool.CreateFunctionTool(
+        functionName: "list_recent_notes",
+        functionParameters: BinaryData.FromString("""
+            {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+            """),
+        strictModeEnabled: true,
+        functionDescription:
+            "List the most recent note blob names in Azure Storage. " +
+            "Use only when the user asks about stored notes or recent blobs.");
 
     public override IAsyncEnumerable<ResponseStreamEvent> CreateAsync(
         CreateResponse request,
@@ -129,29 +188,14 @@ public sealed class AzureIntegrationHandler(
 
         logger.LogInformation("Processing request {ResponseId}", context.ResponseId);
 
-        var demoMessage = await GetDemoSecretAsync(cancellationToken);
-        var blobName = await PersistNoteAsync(context.ResponseId, userInput, cancellationToken);
-        var recentNotes = await ListRecentNoteNamesAsync(cancellationToken);
-
-        logger.LogInformation(
-            "Key Vault secret '{SecretName}' loaded; note written to blob '{BlobName}'",
-            azureOptions.DemoSecretName,
-            blobName);
-
-        var instructions = new StringBuilder()
-            .AppendLine(BaseSystemPrompt)
-            .AppendLine()
-            .AppendLine("Operator-provided Key Vault configuration (demo secret):")
-            .AppendLine(demoMessage)
-            .AppendLine()
-            .AppendLine($"This turn was persisted to blob: {blobName}")
-            .AppendLine($"Recent note blobs in the container: {string.Join(", ", recentNotes)}")
-            .ToString();
-
         var options = new CreateResponseOptions
         {
-            Instructions = instructions,
+            Instructions = BaseSystemPrompt,
+            ParallelToolCallsEnabled = true,
         };
+        options.Tools.Add(GetDemoSecretTool);
+        options.Tools.Add(PersistNoteTool);
+        options.Tools.Add(ListRecentNotesTool);
 
         foreach (var item in history)
         {
@@ -174,9 +218,99 @@ public sealed class AzureIntegrationHandler(
 
         options.InputItems.Add(ResponseItem.CreateUserMessageItem(userInput));
 
-        var result = await responsesClient.CreateResponseAsync(options, cancellationToken);
-        return result.Value.GetOutputText() ?? string.Empty;
+        try
+        {
+            for (var round = 0; round < MaxToolRounds; round++)
+            {
+                var result = await responsesClient.CreateResponseAsync(options, cancellationToken);
+                var response = result.Value;
+                var functionCalls = response.OutputItems.OfType<FunctionCallResponseItem>().ToList();
+
+                if (functionCalls.Count == 0)
+                    return response.GetOutputText() ?? string.Empty;
+
+                foreach (var outputItem in response.OutputItems)
+                    options.InputItems.Add(outputItem);
+
+                foreach (var call in functionCalls)
+                {
+                    logger.LogInformation(
+                        "Tool call {FunctionName} (callId={CallId}) on response {ResponseId}",
+                        call.FunctionName,
+                        call.CallId,
+                        context.ResponseId);
+
+                    var toolOutput = await ExecuteToolAsync(
+                        call,
+                        context.ResponseId,
+                        cancellationToken);
+
+                    options.InputItems.Add(
+                        ResponseItem.CreateFunctionCallOutputItem(call.CallId, toolOutput));
+                }
+            }
+
+            logger.LogWarning(
+                "Reached max tool rounds ({MaxRounds}) for response {ResponseId}",
+                MaxToolRounds,
+                context.ResponseId);
+            return "I reached the tool-call limit before finishing. Please try a simpler request.";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Foundry model call failed. Ensure deployment '{Model}' exists on the Foundry account and the agent identity can call it.",
+                Environment.GetEnvironmentVariable("AZURE_AI_MODEL_DEPLOYMENT_NAME"));
+            return
+                "The Foundry model call failed. " +
+                $"Check that model deployment '{Environment.GetEnvironmentVariable("AZURE_AI_MODEL_DEPLOYMENT_NAME")}' exists " +
+                $"and is reachable. Details: {ex.GetType().Name}: {ex.Message}";
+        }
     }
+
+    private async Task<string> ExecuteToolAsync(
+        FunctionCallResponseItem call,
+        string responseId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return call.FunctionName switch
+            {
+                "get_demo_secret" => await GetDemoSecretAsync(cancellationToken),
+                "persist_note" => await PersistNoteAsync(
+                    responseId,
+                    ExtractRequiredStringArg(call.FunctionArguments, "content"),
+                    cancellationToken),
+                "list_recent_notes" => FormatNoteList(
+                    await ListRecentNoteNamesAsync(cancellationToken)),
+                _ => $"Unknown tool '{call.FunctionName}'.",
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Tool '{FunctionName}' failed", call.FunctionName);
+            return $"Tool '{call.FunctionName}' failed: {ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private static string ExtractRequiredStringArg(BinaryData arguments, string name)
+    {
+        using var doc = JsonDocument.Parse(arguments);
+        if (!doc.RootElement.TryGetProperty(name, out var value) ||
+            value.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            throw new ArgumentException($"Tool argument '{name}' is required.");
+        }
+
+        return value.GetString()!;
+    }
+
+    private static string FormatNoteList(IReadOnlyList<string> names) =>
+        names.Count == 0
+            ? "(no notes found)"
+            : string.Join(", ", names);
 
     private async Task<string> GetDemoSecretAsync(CancellationToken cancellationToken)
     {
@@ -198,7 +332,7 @@ public sealed class AzureIntegrationHandler(
 
     private async Task<string> PersistNoteAsync(
         string responseId,
-        string userInput,
+        string noteContent,
         CancellationToken cancellationToken)
     {
         var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'");
@@ -206,8 +340,8 @@ public sealed class AzureIntegrationHandler(
         var content = new StringBuilder()
             .AppendLine($"response_id: {responseId}")
             .AppendLine($"timestamp_utc: {DateTimeOffset.UtcNow:O}")
-            .AppendLine("user_input:")
-            .AppendLine(userInput)
+            .AppendLine("note:")
+            .AppendLine(noteContent)
             .ToString();
 
         try
@@ -222,7 +356,7 @@ public sealed class AzureIntegrationHandler(
                 overwrite: true,
                 cancellationToken: cancellationToken);
 
-            return blobName;
+            return $"Wrote blob '{blobName}'.";
         }
         catch (Exception ex)
         {

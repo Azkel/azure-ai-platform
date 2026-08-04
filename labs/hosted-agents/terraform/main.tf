@@ -36,6 +36,16 @@ locals {
   environment            = "dev"
   acr_safe_workload_name = replace(var.workload_name, "-", "")
   location_short         = module.platform_core.location_short
+  # Storage account names: 3–24 lowercase alphanumeric.
+  # Base "st{workload}{env}{loc}" is 20 chars for this lab; +4 digits = 24 (Azure max).
+  # Random suffix avoids the ~14-day soft-delete name reservation after destroy.
+  storage_account_name = "st${local.acr_safe_workload_name}${local.environment}${local.location_short}${random_integer.storage_suffix.result}"
+}
+
+# New value on each fresh apply after destroy (resource is removed with state).
+resource "random_integer" "storage_suffix" {
+  min = 1000
+  max = 9999
 }
 
 resource "azurerm_container_registry" "acr" {
@@ -142,9 +152,15 @@ resource "azurerm_key_vault_secret" "agent_demo_message" {
 }
 
 # Workload storage for agent note persistence (Azure AD auth only — no account keys).
-# Storage account names: 3–24 lowercase alphanumeric chars.
+# Soft-delete notes:
+# - Blob/container soft-delete is left disabled (no delete_retention_policy) so
+#   terraform destroy removes data with the account rather than retaining soft-deleted blobs.
+# - Azure still soft-deletes the *account* for ~14 days after destroy and does not
+#   expose a purge API (unlike Key Vault). A 4-digit random suffix keeps recreates
+#   from colliding with the reserved name:
+#   https://learn.microsoft.com/en-us/azure/storage/common/storage-account-recover
 resource "azurerm_storage_account" "agent_data" {
-  name                            = "st${local.acr_safe_workload_name}${local.environment}${local.location_short}"
+  name                            = local.storage_account_name
   resource_group_name             = module.platform_core.resource_group_name
   location                        = module.platform_core.resource_group_location
   account_tier                    = "Standard"
@@ -157,7 +173,10 @@ resource "azurerm_storage_account" "agent_data" {
   public_network_access_enabled   = true
 
   blob_properties {
-    versioning_enabled = false
+    versioning_enabled  = false
+    change_feed_enabled = false
+    # Intentionally omit delete_retention_policy / container_delete_retention_policy
+    # and restore_policy so soft-deleted blobs/containers are not retained.
   }
 
   tags = merge({
@@ -165,6 +184,13 @@ resource "azurerm_storage_account" "agent_data" {
     Workload    = var.workload_name
     Purpose     = "agent-data"
   }, var.tags)
+
+  lifecycle {
+    precondition {
+      condition     = length(local.storage_account_name) >= 3 && length(local.storage_account_name) <= 24
+      error_message = "Storage account name '${local.storage_account_name}' must be 3–24 characters (Azure limit)."
+    }
+  }
 }
 
 resource "azurerm_storage_container" "agent_notes" {
@@ -232,6 +258,26 @@ resource "azapi_resource" "foundry_project" {
 
   # Ensure Foundry User role is assigned before creating projects
   depends_on = [module.platform_core.foundry_user_role_assignment_id]
+}
+
+# Model deployment used by the hosted agent (AZURE_AI_MODEL_DEPLOYMENT_NAME).
+# Account-scoped on the Foundry AIServices resource — required before agent invoke.
+resource "azurerm_cognitive_deployment" "agent_model" {
+  name                 = var.model_deployment_name
+  cognitive_account_id = module.platform_core.foundry_id
+
+  model {
+    format  = var.model_format
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = var.model_sku_name
+    capacity = var.model_sku_capacity
+  }
+
+  depends_on = [module.platform_core]
 }
 
 locals {
@@ -464,4 +510,14 @@ output "foundry_project_name" {
 output "foundry_project_endpoint" {
   description = "The endpoint of the Microsoft Foundry project"
   value       = local.foundry_project_endpoint
+}
+
+output "model_deployment_name" {
+  description = "Foundry model deployment name used by the hosted agent"
+  value       = azurerm_cognitive_deployment.agent_model.name
+}
+
+output "model_deployment_id" {
+  description = "Resource ID of the Foundry model deployment"
+  value       = azurerm_cognitive_deployment.agent_model.id
 }

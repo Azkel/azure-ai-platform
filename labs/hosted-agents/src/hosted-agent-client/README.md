@@ -145,12 +145,47 @@ You: exit
 Goodbye!
 ```
 
+## Example questions (Storage + Key Vault)
+
+The client only calls the agent endpoint. Key Vault and Storage are accessed **inside the hosted agent** via managed-identity **function tools** (only when the model decides they are needed). Use prompts like these to exercise that path:
+
+| Goal | Example prompt |
+|------|----------------|
+| No Azure I/O | `What is Microsoft Foundry?` (should answer without calling tools) |
+| Key Vault | `What operator message is stored in Key Vault?` |
+| Storage write | `Please save a note that says "lab checkpoint 1", then tell me the blob name.` |
+| Storage list | `List the recent note blobs you can see.` |
+| Both | `Read the Key Vault demo secret and list the recent note blobs.` |
+
+**What a healthy reply looks like:** for tool prompts, the agent echoes the demo secret text (from `agent-demo-message`) and/or a blob path under `notes/…`. For ordinary Q&A, it should not invent blob names or claim it wrote a note.
+
+**Confirm outside the chat** (optional ground truth). The setup scripts grant your signed-in identity **Key Vault Secrets User** and **Storage Blob Data Contributor** so these work after RBAC propagates:
+
+```bash
+# Secret the agent should have read
+az keyvault secret show \
+  --vault-name kv-hosted-agents-dev-weu \
+  --name agent-demo-message \
+  --query value -o tsv
+
+# Blobs created by recent turns
+az storage blob list \
+  --account-name sthostedagentsdevweu#### \
+  --container-name agent-notes \
+  --auth-mode login \
+  --prefix notes/ \
+  -o table
+```
+
+If the reply mentions `(unavailable: …)` or you get Storage/KV 403s in agent logs, check that the Docker deploy workflow granted the agent instance identity **Storage Blob Data Contributor** and **Key Vault Secrets User**.
+
 ## Command Line Arguments
 
 | Argument | Description |
 |----------|-------------|
 | `<endpoint>` | Foundry project endpoint URL (required if FOUNDRY_ENDPOINT not set) |
 | `[agent]` | Agent name (default: storage-kv-agent, or from AGENT_NAME env var) |
+
 
 ## Environment Variables
 
@@ -203,7 +238,13 @@ Both scripts:
 - Require Azure CLI to be installed and logged in (`az login`)
 - Automatically detect your Foundry resource
 - Populate appsettings.json with the correct endpoint
-- Support custom project and agent names via command-line arguments
+- Grant RBAC to the signed-in identity if missing:
+  - **Foundry User** on the Foundry account (`agents/write` / client invoke; Owner alone is not enough)
+  - **Key Vault Secrets User** on the lab Key Vault (read `agent-demo-message` for ground truth)
+  - **Storage Blob Data Contributor** on the lab Storage Account (list/read note blobs)
+- Support custom project, agent, Key Vault, and Storage names via command-line arguments
+
+The RBAC step requires permission to create role assignments (Owner or Role Based Access Control Administrator on the account or resource group).
 
 ## Project Structure
 

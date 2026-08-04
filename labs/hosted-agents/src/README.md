@@ -19,8 +19,11 @@ Based on the Microsoft Foundry [bring-your-own HelloWorld](https://github.com/mi
 
 ## Runtime behavior
 
-1. `SecretClient` reads the user-provided demo secret from Key Vault
-2. `BlobContainerClient` writes a turn note under `notes/` and lists recent blobs
-3. Foundry Responses API generates the reply with that context in instructions
+1. Foundry Responses API is called with function tools registered:
+   - `get_demo_secret` — `SecretClient` reads the demo secret from Key Vault
+   - `persist_note` — `BlobContainerClient` writes a note under `notes/`
+   - `list_recent_notes` — lists recent blob names
+2. A tool loop executes only the tools the model requests (ordinary Q&A skips Azure I/O)
+3. The final model text is returned to the caller
 
 All Azure auth uses `DefaultAzureCredential` (agent instance identity when hosted).

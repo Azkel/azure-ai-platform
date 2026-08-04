@@ -86,3 +86,39 @@ variable "additional_key_vault_secrets_user_principal_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "model_deployment_name" {
+  description = "Foundry model deployment name (must match AZURE_AI_MODEL_DEPLOYMENT_NAME used by the agent)."
+  type        = string
+  default     = "gpt-5-mini"
+}
+
+variable "model_name" {
+  description = "Model name from the Foundry model catalog."
+  type        = string
+  default     = "gpt-5-mini"
+}
+
+variable "model_version" {
+  description = "Model version. Required for gpt-5 family deployments."
+  type        = string
+  default     = "2025-08-07"
+}
+
+variable "model_format" {
+  description = "Model format (e.g. OpenAI)."
+  type        = string
+  default     = "OpenAI"
+}
+
+variable "model_sku_name" {
+  description = "Deployment SKU name (GlobalStandard keeps lab quota simple)."
+  type        = string
+  default     = "GlobalStandard"
+}
+
+variable "model_sku_capacity" {
+  description = "Deployment capacity (TPM thousands). Keep low for labs."
+  type        = number
+  default     = 10
+}

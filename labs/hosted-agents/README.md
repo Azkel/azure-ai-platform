@@ -13,8 +13,8 @@ This lab includes a **BYO Responses** sample agent (based on the [Foundry HelloW
 - **C#** implementation using `.NET 10` and the `Azure.AI.AgentServer.Responses` SDK
 - **Docker** containerization for deployment to Foundry Agent Service
 - Integration with **Microsoft Foundry** models via the Responses API
-- **Azure Key Vault** secret retrieval with `DefaultAzureCredential` (agent instance identity)
-- **Azure Storage** blob note persistence with the same managed identity
+- **Function tools** for **Azure Key Vault** and **Azure Storage** with `DefaultAzureCredential` (agent instance identity)
+- On-demand tool calls — Storage/Key Vault run only when the model needs them
 
 ### Sample Location
 - **Source code**: `labs/hosted-agents/src/storage-kv-agent/`
@@ -25,8 +25,8 @@ This lab includes a **BYO Responses** sample agent (based on the [Foundry HelloW
 ### Sample Features
 - Forwards user input to a Foundry model via the Responses API
 - Maintains conversation history across turns
-- Reads a **user-provided demo secret** from Key Vault and injects it into model instructions
-- Writes each turn to a blob under `notes/` and lists recent note names for context
+- Exposes **Key Vault** and **Storage** as Responses function tools (`get_demo_secret`, `persist_note`, `list_recent_notes`)
+- Runs a tool loop so the model calls Azure only when the user asks for those capabilities
 - Handles streaming responses with SSE (Server-Sent Events)
 - Includes built-in health endpoints (`/readiness`)
 - Automatically integrates with Application Insights for telemetry
@@ -34,11 +34,10 @@ This lab includes a **BYO Responses** sample agent (based on the [Foundry HelloW
 ### What the Sample Does
 On each request the agent:
 1. Receives a user message via the `/responses` endpoint
-2. Reads `agent-demo-message` (configurable) from Key Vault using managed identity
-3. Persists the turn to Azure Blob Storage (`agent-notes` container)
-4. Retrieves conversation history using `ResponseContext.GetHistoryAsync()`
-5. Calls a Foundry model (e.g. `gpt-5-mini`) with instructions enriched by the Key Vault value and blob context
-6. Returns the model's response to the user
+2. Retrieves conversation history using `ResponseContext.GetHistoryAsync()`
+3. Calls a Foundry model (e.g. `gpt-5-mini`) with tools registered for Key Vault and Storage
+4. If the model requests a tool, executes it via managed identity (Key Vault Secrets User / Storage Blob Data Contributor) and continues the Responses loop
+5. Returns the model's final text response (ordinary Q&A does not touch Storage or Key Vault)
 
 **Required Environment Variables**:
 - `FOUNDRY_PROJECT_ENDPOINT` - Foundry project endpoint (auto-injected when hosted)
@@ -84,6 +83,7 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 - **Azure Key Vault** for secrets management (using Azure RBAC), including App Insights connection string and the user-provided agent demo secret
 - **Azure Storage Account** (Azure AD auth only) with `agent-notes` blob container for agent persistence
 - **Microsoft Foundry Project** for hosting agents
+- **Model deployment** (`gpt-5-mini` by default) on the Foundry account for agent inference
 
 ## Prerequisites
 
@@ -236,7 +236,7 @@ The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](
 
 **Naming convention** (lab uses a single hardcoded `dev` environment in resource names):
 - ACR name: `acrhostedagentsdevweu`
-- Storage account: `sthostedagentsdevweu`
+- Storage account: `sthostedagents{env}{location}{####}` (e.g. `sthostedagentsdevweu4821`) — 4-digit random suffix for recreate-friendly naming within the 24-char Azure limit
 - Key Vault: `kv-hosted-agents-dev-weu`
 - Agent name: `storage-kv-agent`
 - Image: `{ACR}.azurecr.io/storage-kv-agent:{tag}`
@@ -282,27 +282,25 @@ This lab is configured for minimal cost:
 To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC via the cleanup workflow. You can also manually trigger destruction.
 
 **Important Note on Resource Deletion:**
-- **Immediately deleted**: Resource Group, VNet, Subnet, Storage Account
-- **7-day soft delete retention (auto-purged after 7 days)**:
-  - **Microsoft Foundry Cognitive Account**: Azure enforces a mandatory 7-day soft delete retention that cannot be disabled. After `terraform destroy`, the account will be in soft-delete state for 7 days before automatic purge.
-  - **Azure Key Vault**: Has a minimum 7-day soft delete retention (Azure requirement) with `purge_protection_enabled = false`, allowing automatic purge after 7 days.
-  - **Azure Container Registry (ACR)**: Has soft delete enabled by default with minimum 7-day retention, auto-purged after the retention period.
-  - **Application Insights**: Has Smart Detection rules that can block deletion. Terraform configuration attempts to disable this, but if issues occur:
-- **To purge immediately** (bypassing the 7-day wait):
+- **Deleted by Terraform destroy (billing stops)**: Resource Group, VNet, Subnet, Storage Account, model deployment
+- **Storage account name reservation**: Azure keeps deleted storage accounts recoverable for ~**14 days** and **does not provide a purge API**. This lab appends a **4-digit random suffix** (`sthostedagentsdevweu####`, 24 chars max) so destroy/recreate does not collide with the reserved name ([recover deleted storage account](https://learn.microsoft.com/en-us/azure/storage/common/storage-account-recover)).
+- **Blob soft-delete**: Disabled on the lab storage account so destroy does not leave soft-deleted blobs behind inside the account.
+- **Purged on destroy via azurerm provider features** (when purge protection allows):
+  - **Azure Key Vault**: `purge_soft_delete_on_destroy = true`
+  - **Microsoft Foundry Cognitive Account**: `purge_soft_delete_on_destroy = true` (Azure may still enforce a retention window in some cases)
+- **Other soft-delete / retention**:
+  - **Azure Container Registry (ACR)**: Soft delete with minimum retention; auto-purged after the retention period
+  - **Application Insights**: Smart Detection rules can block deletion in some cases
+- **Manual purge examples** (where Azure supports it):
   ```bash
-  # Purge Cognitive Services / Foundry account
+  # Purge Cognitive Services / Foundry account (if still soft-deleted)
   az cognitiveservices account purge --name cog-hosted-agents-dev-weu --resource-group rg-hosted-agents-dev-weu --location westeurope
   
-  # Purge Key Vault
+  # Purge Key Vault (if still soft-deleted)
   az keyvault purge --name kv-hosted-agents-dev-weu --location westeurope
   
-  # Purge ACR (if needed)
-  az acr purge --name acrhostedagentsdevweu --registry acrhostedagentsdevweu.azurecr.io
-  
-  # Delete Application Insights Smart Detection rules (if blocking deletion)
-  az monitor app-insights smart-detection list --resource-group rg-hosted-agents-dev-weu --app appi-hosted-agents-dev-weu | jq -r '.[] | .name' | xargs -I {} az monitor app-insights smart-detection delete --resource-group rg-hosted-agents-dev-weu --app appi-hosted-agents-dev-weu --name {}
+  # Storage account: no purge command — wait for the ~14-day recovery window
   ```
-- Consider adding a post-destroy cleanup step in your workflow to purge soft-deleted resources
 
 ## References
 
