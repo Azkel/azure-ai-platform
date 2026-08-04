@@ -256,24 +256,31 @@ jobs:
       if: steps.build-push.outcome == 'success' || github.event.inputs.deploy-only == 'true'
       id: get-tag
       run: |
-        # If we built, use the first tag; if deploy-only, use 'latest'
+        set -euo pipefail
+        # Prefer an immutable digest so Foundry always pulls the new image.
+        # Re-deploying the same mutable tag (e.g. hosted-agents-storage) can leave
+        # the previous digest running even when ACR was updated.
         if [ "${{ github.event.inputs.deploy-only }}" = "true" ]; then
-          TAG="latest"
+          IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:latest"
+        elif [ -n "${{ steps.build-push.outputs.digest }}" ]; then
+          IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}@${{ steps.build-push.outputs.digest }}"
         else
-          TAGS="${{ steps.meta.outputs.tags }}"
-          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
-          LAST_TAG=${TAG_ARRAY[0]}
-          TAG=${LAST_TAG#*:}
+          # Fallback: immutable sha-* tag from docker/metadata-action
+          TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed -n 's|^[^:]*:\(sha-.*\)$|\1|p' | head -1)
+          if [ -z "$TAG" ]; then
+            TAG=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed -n 's|^[^:]*:\(.*\)$|\1|p' | head -1)
+          fi
+          IMAGE_REF="${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${TAG}"
         fi
-        echo "Using tag: $TAG"
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Using image: $IMAGE_REF"
+        echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
 
     - name: Deploy hosted agent
       if: github.event.inputs.skip-deploy == 'false'
       id: deploy-agent
       working-directory: labs/hosted-agents/src
       env:
-        IMAGE_REF: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}
+        IMAGE_REF: ${{ steps.get-tag.outputs.image_ref }}
         AZURE_ENV_NAME: ${{ env.LAB_ENVIRONMENT }}
         FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
       run: |

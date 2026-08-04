@@ -120,15 +120,14 @@ public sealed class AzureIntegrationHandler(
         "Call list_recent_notes only when the user asks about stored notes or recent blobs. " +
         "Do not call these tools for ordinary questions.";
 
-    // Match OpenAI Responses function-calling examples: no-arg tools use null
-    // parameters; strict mode is off. Foundry rejects some strict empty schemas
-    // and also rejects echoing reasoning items back as input (see tool loop).
+    // No-arg tools: empty object schema (not null) — Foundry is picky about
+    // parameters. Keep strictModeEnabled off; see tool-loop filtering below.
     private static readonly ResponseTool GetDemoSecretTool = ResponseTool.CreateFunctionTool(
         functionName: "get_demo_secret",
         functionDescription:
             "Read the operator-provided demo message from Azure Key Vault. " +
             "Use only when the user asks about the Key Vault demo secret or configuration message.",
-        functionParameters: null,
+        functionParameters: BinaryData.FromString("""{"type":"object","properties":{}}"""),
         strictModeEnabled: false);
 
     private static readonly ResponseTool PersistNoteTool = ResponseTool.CreateFunctionTool(
@@ -155,7 +154,7 @@ public sealed class AzureIntegrationHandler(
         functionDescription:
             "List the most recent note blob names in Azure Storage. " +
             "Use only when the user asks about stored notes or recent blobs.",
-        functionParameters: null,
+        functionParameters: BinaryData.FromString("""{"type":"object","properties":{}}"""),
         strictModeEnabled: false);
     public override IAsyncEnumerable<ResponseStreamEvent> CreateAsync(
         CreateResponse request,
@@ -178,7 +177,11 @@ public sealed class AzureIntegrationHandler(
         var options = new CreateResponseOptions
         {
             Instructions = BaseSystemPrompt,
-            ParallelToolCallsEnabled = true,
+            ParallelToolCallsEnabled = false,
+            ReasoningOptions = new ResponseReasoningOptions
+            {
+                ReasoningEffortLevel = ResponseReasoningEffortLevel.Low,
+            },
         };
         options.Tools.Add(GetDemoSecretTool);
         options.Tools.Add(PersistNoteTool);
