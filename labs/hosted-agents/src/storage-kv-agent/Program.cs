@@ -1,10 +1,8 @@
-// Copyright (c) Microsoft. All rights reserved.
-
 /*
  * Hosted agent — Bring Your Own Responses (C#) with Azure Storage + Key Vault
  *
- * Extends the Foundry HelloWorld BYO sample to demonstrate managed-identity
- * access to Azure resources from a hosted agent container via function tools:
+ * Demonstrates managed-identity access to Azure resources from a hosted agent
+ * container via function tools:
  *
  *   - get_demo_secret   — read a user-provided demo message from Key Vault
  *   - persist_note      — write a note blob to Azure Storage
@@ -122,22 +120,22 @@ public sealed class AzureIntegrationHandler(
         "Call list_recent_notes only when the user asks about stored notes or recent blobs. " +
         "Do not call these tools for ordinary questions.";
 
+    // Match OpenAI Responses function-calling examples: no-arg tools use null
+    // parameters; strict mode is off. Foundry rejects some strict empty schemas
+    // and also rejects echoing reasoning items back as input (see tool loop).
     private static readonly ResponseTool GetDemoSecretTool = ResponseTool.CreateFunctionTool(
         functionName: "get_demo_secret",
-        functionParameters: BinaryData.FromString("""
-            {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-            """),
-        strictModeEnabled: true,
         functionDescription:
             "Read the operator-provided demo message from Azure Key Vault. " +
-            "Use only when the user asks about the Key Vault demo secret or configuration message.");
+            "Use only when the user asks about the Key Vault demo secret or configuration message.",
+        functionParameters: null,
+        strictModeEnabled: false);
 
     private static readonly ResponseTool PersistNoteTool = ResponseTool.CreateFunctionTool(
         functionName: "persist_note",
+        functionDescription:
+            "Persist a text note to Azure Blob Storage. " +
+            "Use only when the user asks to save, remember, or persist content.",
         functionParameters: BinaryData.FromString("""
             {
               "type": "object",
@@ -147,29 +145,18 @@ public sealed class AzureIntegrationHandler(
                   "description": "Text to store as a blob note under notes/."
                 }
               },
-              "required": ["content"],
-              "additionalProperties": false
+              "required": ["content"]
             }
             """),
-        strictModeEnabled: true,
-        functionDescription:
-            "Persist a text note to Azure Blob Storage. " +
-            "Use only when the user asks to save, remember, or persist content.");
+        strictModeEnabled: false);
 
     private static readonly ResponseTool ListRecentNotesTool = ResponseTool.CreateFunctionTool(
         functionName: "list_recent_notes",
-        functionParameters: BinaryData.FromString("""
-            {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-            """),
-        strictModeEnabled: true,
         functionDescription:
             "List the most recent note blob names in Azure Storage. " +
-            "Use only when the user asks about stored notes or recent blobs.");
-
+            "Use only when the user asks about stored notes or recent blobs.",
+        functionParameters: null,
+        strictModeEnabled: false);
     public override IAsyncEnumerable<ResponseStreamEvent> CreateAsync(
         CreateResponse request,
         ResponseContext context,
@@ -229,8 +216,27 @@ public sealed class AzureIntegrationHandler(
                 if (functionCalls.Count == 0)
                     return response.GetOutputText() ?? string.Empty;
 
+                // Only echo items Foundry accepts as input. gpt-5-mini often
+                // emits ReasoningResponseItem; re-sending those yields HTTP 400
+                // invalid_payload. Function calls (+ later their outputs) are enough.
                 foreach (var outputItem in response.OutputItems)
-                    options.InputItems.Add(outputItem);
+                {
+                    switch (outputItem)
+                    {
+                        case FunctionCallResponseItem functionCall:
+                            options.InputItems.Add(functionCall);
+                            break;
+                        case MessageResponseItem message:
+                            options.InputItems.Add(message);
+                            break;
+                        default:
+                            logger.LogDebug(
+                                "Skipping non-replayable output item {ItemType} on response {ResponseId}",
+                                outputItem.GetType().Name,
+                                context.ResponseId);
+                            break;
+                    }
+                }
 
                 foreach (var call in functionCalls)
                 {
@@ -259,12 +265,12 @@ public sealed class AzureIntegrationHandler(
         catch (Exception ex)
         {
             logger.LogError(ex,
-                "Foundry model call failed. Ensure deployment '{Model}' exists on the Foundry account and the agent identity can call it.",
+                "Foundry Responses call failed for deployment '{Model}'.",
                 Environment.GetEnvironmentVariable("AZURE_AI_MODEL_DEPLOYMENT_NAME"));
             return
                 "The Foundry model call failed. " +
-                $"Check that model deployment '{Environment.GetEnvironmentVariable("AZURE_AI_MODEL_DEPLOYMENT_NAME")}' exists " +
-                $"and is reachable. Details: {ex.GetType().Name}: {ex.Message}";
+                $"Deployment '{Environment.GetEnvironmentVariable("AZURE_AI_MODEL_DEPLOYMENT_NAME")}'. " +
+                $"Details: {ex.GetType().Name}: {ex.Message}";
         }
     }
 

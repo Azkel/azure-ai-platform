@@ -8,7 +8,7 @@ Azure AI Foundry Hosted Agents provide a managed environment for running AI work
 
 ## Sample: Hosted Agent with Storage + Key Vault
 
-This lab includes a **BYO Responses** sample agent (based on the [Foundry HelloWorld sample](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own)) that demonstrates:
+This lab includes a **BYO Responses** sample agent that demonstrates:
 - **Bring Your Own (BYO)** approach using the **Responses protocol**
 - **C#** implementation using `.NET 10` and the `Azure.AI.AgentServer.Responses` SDK
 - **Docker** containerization for deployment to Foundry Agent Service
@@ -42,7 +42,7 @@ On each request the agent:
 **Required Environment Variables**:
 - `FOUNDRY_PROJECT_ENDPOINT` - Foundry project endpoint (auto-injected when hosted)
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (default: `gpt-5-mini`)
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` - App Insights connection string (auto-injected when hosted)
+- `APPLICATIONINSIGHTS_CONNECTION_STRING` - App Insights connection string (injected by Foundry when the project AppInsights connection exists; created by Terraform)
 - `AZURE_STORAGE_ACCOUNT_NAME` - Agent data storage account
 - `AZURE_STORAGE_CONTAINER_NAME` - Blob container (default: `agent-notes`)
 - `AZURE_KEY_VAULT_URI` - Key Vault URI
@@ -76,14 +76,15 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 - **Subnet** for hosting agent resources
 - **Log Analytics Workspace** for monitoring
 - **Microsoft Foundry Cognitive Account** (kind: AIServices) - the core Foundry resource
-- **Application Insights** for agent observability
+- **Application Insights** for agent observability (linked to the Foundry project so agents get `APPLICATIONINSIGHTS_CONNECTION_STRING`)
 
 **Lab-Specific Resources:**
 - **Azure Container Registry** for Docker images
 - **Azure Key Vault** for secrets management (using Azure RBAC), including App Insights connection string and the user-provided agent demo secret
 - **Azure Storage Account** (Azure AD auth only) with `agent-notes` blob container for agent persistence
 - **Microsoft Foundry Project** for hosting agents
-- **Model deployment** (`gpt-5-mini` by default) on the Foundry account for agent inference
+
+> Model deployments (e.g. `gpt-5-mini`) are **not** managed by Terraform — create them in the Foundry portal or via `azd` / Azure CLI so quota/region issues do not block infra applies. The Docker workflow still sets `AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5-mini`.
 
 ## Prerequisites
 
@@ -310,7 +311,6 @@ To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC 
 - [Deploy Hosted Agent from Private ACR](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry)
 - [Set up CI/CD with Azure Developer CLI](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli)
 - [Manage hosted agent (identity / RBAC)](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/manage-hosted-agent)
-- [Foundry BYO C# samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own)
 
 ### Azure Developer CLI
 - [Install Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
@@ -379,7 +379,9 @@ After a successful invoke, confirm a blob appears under `notes/` in the `agent-n
 
 ### 3. Monitor with Application Insights
 
-The agent automatically sends telemetry to Application Insights. To view:
+Terraform links `appi-hosted-agents-{env}-{region}` to the Foundry project via an **AppInsights** connection. Foundry then injects `APPLICATIONINSIGHTS_CONNECTION_STRING` into the hosted agent container (do not set it in `azure.yaml`). The AgentServer SDK exports OpenTelemetry traces when that variable is present.
+
+To view telemetry:
 
 1. Go to Azure Portal
 2. Navigate to the Application Insights resource: `appi-hosted-agents-dev-weu`
@@ -485,9 +487,10 @@ curl -X POST http://localhost:8088/responses \
 - Use digest-based tags (@sha256:...) for reproducible deploys
 
 **Connection string not injected:**
-- Application Insights connection string is auto-injected by Foundry
-- The sample code checks for `APPLICATIONINSIGHTS_CONNECTION_STRING`
-- If missing, check Foundry project has App Insights configured
+- Foundry injects `APPLICATIONINSIGHTS_CONNECTION_STRING` only when the project has an AppInsights connection
+- Terraform creates that connection (`foundry_project_appinsights_connection` in `terraform/main.tf`)
+- Re-run Terraform Deploy if the connection is missing, then redeploy the agent
+- Do not declare `APPLICATIONINSIGHTS_CONNECTION_STRING` in `azure.yaml` (platform-reserved)
 
 ## Support
 

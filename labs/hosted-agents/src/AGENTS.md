@@ -1,14 +1,17 @@
 # Coding Agent Instructions
 
-This project is a **Microsoft Foundry hosted agent** — a containerized AI agent that runs in [Foundry Agent Service](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents). The platform handles containerization, hosting, security, scaling, and observability so you can focus on agent logic.
+This lab is a **Foundry hosted agent** — a containerized AI agent that runs in [Foundry Agent Service](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents). The sample shows BYO Responses with on-demand Azure Storage and Key Vault access via managed identity.
 
 ## Key files
 
-- `Dockerfile` — container definition
+- `storage-kv-agent/Program.cs` — agent handler and function tools
+- `storage-kv-agent/Dockerfile` — container definition
+- `azure.yaml` — azd agent project configuration
+- `hosted-agent-client/` — CLI client for invoking the deployed agent
 
 ## Development workflow
 
-The **Azure Developer CLI (`azd`)** manages the full lifecycle:
+The **Azure Developer CLI (`azd`)** manages the local agent lifecycle from this directory:
 
 ```bash
 azd ai agent run                           # Run locally on http://localhost:8088
@@ -17,24 +20,9 @@ azd deploy                                 # Deploy to Foundry
 azd ai agent invoke "your message"         # Invoke the deployed agent
 ```
 
-## Microsoft Foundry Skill
-
-Install the **Microsoft Foundry Skill** for guided deployment, evaluation, and troubleshooting workflows.
-
-Direct install (preferred, works with any coding agent):
-
-```bash
-npx skills add https://github.com/microsoft/azure-skills --skill microsoft-foundry
-```
-
-Or install the Azure Skills Plugin:
-
-- **Copilot CLI**: `/plugin marketplace add microsoft/azure-skills` then `/plugin install azure@azure-skills`
-- **Claude Code**: `/plugin install azure@claude-plugins-official`
-
-Then ask naturally, e.g. `Use the Microsoft Foundry Skill to deploy this agent.`
+Infrastructure (ACR, Storage, Key Vault, RBAC) is managed by Terraform under `../terraform/`. Container images are built and pushed by the repo GitHub Actions workflow.
 
 ## References
 
 - [Hosted agents overview](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents)
-- [Microsoft Foundry Skill](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/use-microsoft-foundry-skill)
+- Lab docs: [`../README.md`](../README.md)

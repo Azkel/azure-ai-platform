@@ -1,13 +1,11 @@
 # Hosted Agents - Storage + Key Vault Sample
 
-Based on the Microsoft Foundry [bring-your-own HelloWorld](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/csharp/hosted-agents/bring-your-own/responses/HelloWorld) Responses sample, extended to demonstrate managed-identity access to Azure Storage and Key Vault.
+BYO Responses agent for Azure AI Foundry that demonstrates managed-identity access to Azure Storage and Key Vault via function tools.
 
 ## Files
 
-- `README.foundry-sample.md` - Original Foundry sample documentation
 - `azure.yaml` - Azure Developer CLI configuration (env vars for model, storage, Key Vault)
 - `AGENTS.md` - Coding agent instructions
-- `CLAUDE.md` - Claude Code configuration
 - `storage-kv-agent/` - C# sample agent
   - `Program.cs` - Responses handler with Blob + SecretClient integration
   - `StorageKvAgent.csproj` - .NET project file

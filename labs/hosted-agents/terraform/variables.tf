@@ -59,7 +59,7 @@ variable "additional_key_vault_admin_principal_ids" {
 variable "agent_demo_secret_value" {
   description = "User-provided demo secret value stored in Key Vault and read by the hosted agent at runtime via managed identity."
   type        = string
-  default     = "Contoso Labs — greet callers as a concise platform engineer."
+  default     = "Smykpol Labs — greet callers as a concise platform engineer."
   sensitive   = true
 }
 
@@ -85,40 +85,4 @@ variable "additional_key_vault_secrets_user_principal_ids" {
   description = "Extra Entra object IDs granted Key Vault Secrets User (e.g. local developers). The hosted agent identity is granted post-deploy by the Docker workflow."
   type        = list(string)
   default     = []
-}
-
-variable "model_deployment_name" {
-  description = "Foundry model deployment name (must match AZURE_AI_MODEL_DEPLOYMENT_NAME used by the agent)."
-  type        = string
-  default     = "gpt-5-mini"
-}
-
-variable "model_name" {
-  description = "Model name from the Foundry model catalog."
-  type        = string
-  default     = "gpt-5-mini"
-}
-
-variable "model_version" {
-  description = "Model version. Required for gpt-5 family deployments."
-  type        = string
-  default     = "2025-08-07"
-}
-
-variable "model_format" {
-  description = "Model format (e.g. OpenAI)."
-  type        = string
-  default     = "OpenAI"
-}
-
-variable "model_sku_name" {
-  description = "Deployment SKU name (GlobalStandard keeps lab quota simple)."
-  type        = string
-  default     = "GlobalStandard"
-}
-
-variable "model_sku_capacity" {
-  description = "Deployment capacity (TPM thousands). Keep low for labs."
-  type        = number
-  default     = 10
 }

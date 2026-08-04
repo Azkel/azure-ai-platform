@@ -110,9 +110,10 @@ resource "azurerm_role_assignment" "additional_kv_admins" {
   principal_id         = each.value
 }
 
-# App Insights connection string as a Key Vault secret (source of truth for agents).
-# Hosted agents resolve it at deploy time into APPLICATIONINSIGHTS_CONNECTION_STRING
-# rather than baking it into the image or azure.yaml.
+# App Insights connection string in Key Vault (local / ops lookups).
+# Hosted agents do NOT read this secret themselves — Foundry injects
+# APPLICATIONINSIGHTS_CONNECTION_STRING from the project AppInsights connection
+# created below. Do not declare that env var in azure.yaml.
 resource "azurerm_key_vault_secret" "appinsights_connection_string" {
   name         = "applicationinsights-connection-string"
   value        = module.platform_core.application_insights_connection_string
@@ -260,28 +261,35 @@ resource "azapi_resource" "foundry_project" {
   depends_on = [module.platform_core.foundry_user_role_assignment_id]
 }
 
-# Model deployment used by the hosted agent (AZURE_AI_MODEL_DEPLOYMENT_NAME).
-# Account-scoped on the Foundry AIServices resource — required before agent invoke.
-resource "azurerm_cognitive_deployment" "agent_model" {
-  name                 = var.model_deployment_name
-  cognitive_account_id = module.platform_core.foundry_id
-
-  model {
-    format  = var.model_format
-    name    = var.model_name
-    version = var.model_version
-  }
-
-  sku {
-    name     = var.model_sku_name
-    capacity = var.model_sku_capacity
-  }
-
-  depends_on = [module.platform_core]
-}
-
 locals {
   foundry_project_principal_id = azapi_resource.foundry_project.output.identity.principalId
+}
+
+# Link platform App Insights to the Foundry project so hosted agents receive
+# APPLICATIONINSIGHTS_CONNECTION_STRING at runtime (OpenTelemetry via AgentServer).
+# Without this connection the App Insights resource exists but agents stay dark.
+resource "azapi_resource" "foundry_project_appinsights_connection" {
+  type                      = "Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01"
+  name                      = module.platform_core.application_insights_name
+  parent_id                 = azapi_resource.foundry_project.id
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      category = "AppInsights"
+      target   = module.platform_core.application_insights_id
+      authType = "ApiKey"
+      credentials = {
+        key = module.platform_core.application_insights_connection_string
+      }
+      metadata = {
+        ApiType    = "Azure"
+        ResourceId = module.platform_core.application_insights_id
+      }
+    }
+  }
+
+  depends_on = [azapi_resource.foundry_project]
 }
 
 # Account-level Agents capability host is auto-created when the Foundry account
@@ -302,7 +310,10 @@ resource "azapi_resource" "foundry_project_capability_host" {
     }
   }
 
-  depends_on = [azapi_resource.foundry_project]
+  depends_on = [
+    azapi_resource.foundry_project,
+    azapi_resource.foundry_project_appinsights_connection,
+  ]
 }
 
 # Project MI pulls the hosted-agent image from ACR at deploy/runtime.
@@ -333,8 +344,9 @@ resource "azurerm_role_assignment" "foundry_account_acr_repo_reader" {
   principal_id         = module.platform_core.foundry_principal_id
 }
 
-# Foundry identities need Key Vault Secrets User to read the App Insights
-# connection string (and any future agent secrets stored in this vault).
+# Foundry identities need Key Vault Secrets User for vault secrets used by
+# lab ops (e.g. demo message, App Insights connection string backup).
+# Agent telemetry itself uses the project AppInsights connection, not this vault.
 resource "azurerm_role_assignment" "foundry_project_kv_secrets_user" {
   scope                = azurerm_key_vault.kv.id
   role_definition_name = "Key Vault Secrets User"
@@ -510,14 +522,4 @@ output "foundry_project_name" {
 output "foundry_project_endpoint" {
   description = "The endpoint of the Microsoft Foundry project"
   value       = local.foundry_project_endpoint
-}
-
-output "model_deployment_name" {
-  description = "Foundry model deployment name used by the hosted agent"
-  value       = azurerm_cognitive_deployment.agent_model.name
-}
-
-output "model_deployment_id" {
-  description = "Resource ID of the Foundry model deployment"
-  value       = azurerm_cognitive_deployment.agent_model.id
 }
