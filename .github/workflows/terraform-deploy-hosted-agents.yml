@@ -5,15 +5,6 @@ name: Terraform Deploy - Hosted Agents
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to deploy (dev, staging, prod)'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - staging
-        - prod
       action:
         description: 'Terraform action to perform'
         required: true
@@ -39,7 +30,9 @@ env:
   TF_STATE_RESOURCE_GROUP: ${{ secrets.TF_STATE_RESOURCE_GROUP }}
   TF_STATE_STORAGE_ACCOUNT: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
   TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
-  TF_STATE_KEY: "hosted-agents-${{ github.event.inputs.environment || 'dev' }}.tfstate"
+  TF_STATE_KEY: "hosted-agents-dev.tfstate"
+  LAB_ENVIRONMENT: "dev"
+  LOCATION_SHORT: "weu"
   ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
   ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
   ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
@@ -50,7 +43,7 @@ jobs:
   terraform:
     name: Terraform
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    environment: dev
     permissions:
       id-token: write
       contents: read
@@ -95,10 +88,8 @@ jobs:
       if: github.event_name != 'pull_request'
       run: |
         set -euo pipefail
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-        LOCATION_SHORT="weu"
-        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${LOCATION_SHORT}"
-        KV_NAME="kv-hosted-agents-${ENVIRONMENT}-${LOCATION_SHORT}"
+        RG_NAME="rg-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
+        KV_NAME="kv-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
 
         if ! az keyvault show --name "$KV_NAME" --resource-group "$RG_NAME" --output none 2>/dev/null; then
           echo "Key Vault $KV_NAME not found yet - skipping RBAC bootstrap"
@@ -133,9 +124,7 @@ jobs:
         if [ "${{ github.event_name }}" = "pull_request" ]; then
           EXTRA_ARGS+=(-refresh=false)
         fi
-        terraform plan -no-color -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
-          "${EXTRA_ARGS[@]}"
+        terraform plan -no-color -input=false "${EXTRA_ARGS[@]}"
       continue-on-error: false
 
     - name: Terraform Apply
@@ -143,13 +132,11 @@ jobs:
       if: github.event.inputs.action == 'apply'
       run: |
         cd labs/hosted-agents/terraform
-        terraform apply -auto-approve -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+        terraform apply -auto-approve -input=false
 
     - name: Terraform Destroy
       id: destroy
       if: github.event.inputs.action == 'destroy'
       run: |
         cd labs/hosted-agents/terraform
-        terraform destroy -auto-approve -input=false \
-          -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+        terraform destroy -auto-approve -input=false

@@ -20,7 +20,7 @@ This is the simplest possible BYO integration — the protocol SDK handles the H
 
 The agent uses the Foundry SDK to create a `ProjectResponsesClient` from the project endpoint and model deployment name. When a request arrives, the handler fetches conversation history via `GetHistoryAsync()`, builds an input list, calls the model via the Responses API, and returns the reply as a `TextResponse` — which the SDK automatically wraps in the correct SSE lifecycle events (`response.created` → `response.in_progress` → content events → `response.completed`).
 
-See [Program.cs](src/hello-world-dotnet-responses/Program.cs) for the full implementation.
+See [Program.cs](storage-kv-agent/Program.cs) for the full implementation.
 
 ### Agent Hosting
 
@@ -37,7 +37,7 @@ The hosted agent can be developed and deployed to Microsoft Foundry using the [A
 
 ### Environment variables
 
-See [`.env.example`](src/hello-world-dotnet-responses/.env.example) or `.env` for the full list of environment variables this sample uses.
+See [`.env.example`](storage-kv-agent/.env.example) or `.env` for the full list of environment variables this sample uses.
 
 | Variable | Required | Description |
 |----------|----------|-------------|

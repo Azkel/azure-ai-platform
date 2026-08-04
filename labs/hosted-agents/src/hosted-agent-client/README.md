@@ -57,7 +57,7 @@ cat > appsettings.json << EOF
 {
   "FoundrySettings": {
     "Endpoint": "https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project",
-    "AgentName": "hello-world-dotnet-responses"
+    "AgentName": "storage-kv-agent"
   }
 }
 EOF
@@ -70,7 +70,7 @@ dotnet run
 
 ```bash
 export FOUNDRY_ENDPOINT="https://cog-*.services.ai.azure.com/api/projects/my-project"
-export AGENT_NAME="hello-world-dotnet-responses"
+export AGENT_NAME="storage-kv-agent"
 dotnet run
 ```
 
@@ -80,7 +80,7 @@ dotnet run
 dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 
 # Or with both endpoint and agent name
-dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project hello-world-dotnet-responses
+dotnet run https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project storage-kv-agent
 ```
 
 ## Configuration
@@ -90,7 +90,7 @@ The client supports multiple configuration methods with the following precedence
 1. **Command line arguments** - `dotnet run <endpoint> [agent]`
 2. **Environment variables** - `FOUNDRY_ENDPOINT`, `AGENT_NAME`
 3. **appsettings.json** - Configuration file
-4. **Defaults** - Agent name defaults to `hello-world-dotnet-responses`
+4. **Defaults** - Agent name defaults to `storage-kv-agent`
 
 ### appsettings.json Format
 
@@ -98,7 +98,7 @@ The client supports multiple configuration methods with the following precedence
 {
   "FoundrySettings": {
     "Endpoint": "https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project",
-    "AgentName": "hello-world-dotnet-responses"
+    "AgentName": "storage-kv-agent"
   }
 }
 ```
@@ -109,8 +109,8 @@ Place the `appsettings.json` file in the project directory (alongside Program.cs
 
 ```
 Connected to:
-  Endpoint: https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1
-  Agent:    hello-world-dotnet-responses
+  Endpoint: https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project/agents/storage-kv-agent/endpoint/protocols/openai/responses?api-version=v1
+  Agent:    storage-kv-agent
 
 Type your messages below. Type 'exit', 'quit', 'q', or 'bye' to end.
 Type 'help' or '?' for available commands.
@@ -138,7 +138,7 @@ You: clear
 
 Connected to:
   Endpoint: https://cog-*.services.ai.azure.com/...
-  Agent:    hello-world-dotnet-responses
+  Agent:    storage-kv-agent
 
 You: exit
 
@@ -150,14 +150,14 @@ Goodbye!
 | Argument | Description |
 |----------|-------------|
 | `<endpoint>` | Foundry project endpoint URL (required if FOUNDRY_ENDPOINT not set) |
-| `[agent]` | Agent name (default: hello-world-dotnet-responses, or from AGENT_NAME env var) |
+| `[agent]` | Agent name (default: storage-kv-agent, or from AGENT_NAME env var) |
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `FOUNDRY_ENDPOINT` | Foundry project endpoint URL | `https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project` |
-| `AGENT_NAME` | Agent name | `hello-world-dotnet-responses` |
+| `AGENT_NAME` | Agent name | `storage-kv-agent` |
 | `AZURE_TENANT_ID` | Azure AD Tenant ID | From Azure CLI |
 | `AZURE_CLIENT_ID` | Azure AD Application ID | From Azure CLI |
 | `AZURE_CLIENT_SECRET` | Azure AD Application Secret | From Azure CLI |

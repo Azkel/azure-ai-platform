@@ -1,18 +1,17 @@
 name: Docker Build, Push and Deploy - Hosted Agents
 
-# GitHub Actions workflow for building, pushing Docker image to Azure Container Registry,
-# and deploying the HelloWorld hosted agent sample at enterprise scale.
+# GitHub Actions workflow for building, pushing the sample agent image to ACR,
+# and deploying it to Azure AI Foundry Hosted Agents.
 #
 # Architecture:
 # - Infrastructure: Terraform-managed (ACR, Storage, Key Vault, Foundry account + project)
-# - CI/CD: GitHub Actions with dedicated runners (not local developer machines)
+# - CI/CD: GitHub Actions with OIDC
 # - Deployment: Azure Developer CLI (azd) for agent deployment to Foundry
 # - Post-deploy: grant agent instance identity Storage Blob Data Contributor + Key Vault Secrets User
 #
 # Prerequisites:
 # - Terraform infrastructure must be deployed first (ACR, Foundry project)
 # - GitHub OIDC configured for Azure authentication
-# - Service principal with appropriate RBAC roles
 #
 # References:
 # - https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli
@@ -21,15 +20,6 @@ name: Docker Build, Push and Deploy - Hosted Agents
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to deploy to (dev, staging, prod)'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - staging
-        - prod
       skip-deploy:
         description: 'Skip hosted agent deployment (build and push only)'
         required: false
@@ -47,14 +37,15 @@ env:
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   AZURE_LOCATION: "westeurope"
   LOCATION_SHORT: "weu"
-  AGENT_NAME: "hello-world-dotnet-responses"
+  LAB_ENVIRONMENT: "dev"
+  AGENT_NAME: "storage-kv-agent"
   FOUNDRY_PROJECT_NAME: "hosted-agents-project"
 
 jobs:
   validate-infra:
     name: Validate Infrastructure
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    environment: dev
     permissions:
       id-token: write
       contents: read
@@ -76,10 +67,8 @@ jobs:
     - name: Check if Azure Container Registry exists
       id: check-acr
       run: |
-        # Construct the full ACR name based on the pattern in Terraform
         # Pattern: acr{workload_no_hyphens}{environment}{location_short} (e.g., acrhostedagentsdevweu)
-        # ACR names can only contain alphanumeric characters
-        FULL_ACR_NAME="acrhostedagents${{ github.event.inputs.environment }}${{ env.LOCATION_SHORT }}"
+        FULL_ACR_NAME="acrhostedagents${{ env.LAB_ENVIRONMENT }}${{ env.LOCATION_SHORT }}"
         echo "Checking if ACR exists: $FULL_ACR_NAME"
         
         if az acr show --name "$FULL_ACR_NAME" --output none 2>/dev/null; then
@@ -99,9 +88,8 @@ jobs:
         set -euo pipefail
         # Resource name is cog-{workload}-{env}-{region}, but the DNS hostname
         # uses custom_subdomain_name = {workload}-{env}-{region} (no cog- prefix).
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-        RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
-        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
+        RG_NAME="rg-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
+        FOUNDRY_ACCOUNT_NAME="cog-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
 
         echo "Looking up Foundry account: $FOUNDRY_ACCOUNT_NAME in $RG_NAME"
         if ! az cognitiveservices account show \
@@ -139,7 +127,7 @@ jobs:
     needs: validate-infra
     if: needs.validate-infra.outputs.acr_exists == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    environment: dev
     permissions:
       id-token: write
       contents: read
@@ -175,7 +163,7 @@ jobs:
       working-directory: labs/hosted-agents/src
       run: |
         set -euo pipefail
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        ENVIRONMENT="${{ env.LAB_ENVIRONMENT }}"
         FOUNDRY_ENDPOINT="${{ needs.validate-infra.outputs.foundry_project_endpoint }}"
 
         # azure.yaml is the azd project; it is checked in. The .azure/ env
@@ -246,8 +234,8 @@ jobs:
       uses: docker/build-push-action@v5
       id: build-push
       with:
-        context: labs/hosted-agents/src/src/hello-world-dotnet-responses
-        file: labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile
+        context: labs/hosted-agents/src/storage-kv-agent
+        file: labs/hosted-agents/src/storage-kv-agent/Dockerfile
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -274,7 +262,7 @@ jobs:
       working-directory: labs/hosted-agents/src
       env:
         IMAGE_REF: ${{ needs.validate-infra.outputs.acr_name }}.azurecr.io/${{ env.AGENT_NAME }}:${{ steps.get-tag.outputs.tag }}
-        AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'dev' }}
+        AZURE_ENV_NAME: ${{ env.LAB_ENVIRONMENT }}
         FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
       run: |
         set -euo pipefail
@@ -292,7 +280,7 @@ jobs:
         with open('azure.yaml', 'r') as f:
             data = yaml.safe_load(f)
 
-        svc = data['services']['hello-world-dotnet-responses']
+        svc = data['services']['storage-kv-agent']
         svc['language'] = 'docker'
         svc['image'] = os.environ['IMAGE_REF']
         for key in ['project', 'codeConfiguration', 'docker']:
@@ -303,7 +291,7 @@ jobs:
         EOF
 
         # Deploy using azd deploy which will use the image from azure.yaml
-        azd deploy hello-world-dotnet-responses -e "$AZURE_ENV_NAME" --no-prompt --output json
+        azd deploy storage-kv-agent -e "$AZURE_ENV_NAME" --no-prompt --output json
 
     - name: Grant agent identity Storage and Key Vault access
       if: github.event.inputs.skip-deploy == 'false' && steps.deploy-agent.outcome == 'success'
@@ -311,7 +299,7 @@ jobs:
         FOUNDRY_PROJECT_ENDPOINT: ${{ needs.validate-infra.outputs.foundry_project_endpoint }}
       run: |
         set -euo pipefail
-        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        ENVIRONMENT="${{ env.LAB_ENVIRONMENT }}"
         RG_NAME="rg-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"
         STORAGE_ACCOUNT_NAME="sthostedagents${ENVIRONMENT}${{ env.LOCATION_SHORT }}"
         KEY_VAULT_NAME="kv-hosted-agents-${ENVIRONMENT}-${{ env.LOCATION_SHORT }}"

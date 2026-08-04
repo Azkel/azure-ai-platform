@@ -11,7 +11,7 @@ module "platform_core" {
 
   workload_name = "hosted-agents"
   location      = "westeurope"
-  environment   = var.environment
+  environment   = local.environment
 
   # VNet configuration (172.16/16 works in all Agent Service regions, including
   # those without Class A / 10.x support such as Poland Central).
@@ -23,7 +23,7 @@ module "platform_core" {
   log_analytics_retention_in_days = 30 # Cost-optimized for labs
 
   # Microsoft Foundry configuration
-  foundry_sku                             = "S0" # Cost-optimized for labs; use F0 or higher for production
+  foundry_sku                             = "S0" # Cost-optimized for labs
   additional_foundry_user_principal_ids   = var.additional_foundry_user_principal_ids
   foundry_agent_network_injection_enabled = true
 }
@@ -32,12 +32,14 @@ module "platform_core" {
 # ACR names can only contain alphanumeric characters
 # Replace hyphens from workload_name (e.g., hosted-agents -> hostedagents)
 locals {
+  # Single lab environment — naming stays "dev" for stable resource names.
+  environment            = "dev"
   acr_safe_workload_name = replace(var.workload_name, "-", "")
   location_short         = module.platform_core.location_short
 }
 
 resource "azurerm_container_registry" "acr" {
-  name                = "acr${local.acr_safe_workload_name}${var.environment}${local.location_short}"
+  name                = "acr${local.acr_safe_workload_name}${local.environment}${local.location_short}"
   resource_group_name = module.platform_core.resource_group_name
   location            = module.platform_core.resource_group_location
   sku                 = var.acr_sku
@@ -47,7 +49,7 @@ resource "azurerm_container_registry" "acr" {
   # This cannot be disabled, but resources are auto-purged after the retention period
 
   tags = merge({
-    Environment = var.environment
+    Environment = local.environment
     Workload    = var.workload_name
   }, var.tags)
 }
@@ -59,7 +61,7 @@ data "azurerm_client_config" "current" {}
 # Azure Key Vault for secrets and configuration
 # Using Azure RBAC instead of access policies for simpler management in labs
 resource "azurerm_key_vault" "kv" {
-  name                        = "kv-${var.workload_name}-${var.environment}-${local.location_short}"
+  name                        = "kv-${var.workload_name}-${local.environment}-${local.location_short}"
   location                    = module.platform_core.resource_group_location
   resource_group_name         = module.platform_core.resource_group_name
   enabled_for_disk_encryption = true
@@ -75,7 +77,7 @@ resource "azurerm_key_vault" "kv" {
   purge_protection_enabled   = false
 
   tags = merge({
-    Environment = var.environment
+    Environment = local.environment
     Workload    = var.workload_name
   }, var.tags)
 }
@@ -108,7 +110,7 @@ resource "azurerm_key_vault_secret" "appinsights_connection_string" {
   content_type = "text/plain"
 
   tags = merge({
-    Environment = var.environment
+    Environment = local.environment
     Workload    = var.workload_name
     Purpose     = "app-insights"
   }, var.tags)
@@ -128,7 +130,7 @@ resource "azurerm_key_vault_secret" "agent_demo_message" {
   content_type = "text/plain"
 
   tags = merge({
-    Environment = var.environment
+    Environment = local.environment
     Workload    = var.workload_name
     Purpose     = "agent-demo"
   }, var.tags)
@@ -142,7 +144,7 @@ resource "azurerm_key_vault_secret" "agent_demo_message" {
 # Workload storage for agent note persistence (Azure AD auth only — no account keys).
 # Storage account names: 3–24 lowercase alphanumeric chars.
 resource "azurerm_storage_account" "agent_data" {
-  name                            = "st${local.acr_safe_workload_name}${var.environment}${local.location_short}"
+  name                            = "st${local.acr_safe_workload_name}${local.environment}${local.location_short}"
   resource_group_name             = module.platform_core.resource_group_name
   location                        = module.platform_core.resource_group_location
   account_tier                    = "Standard"
@@ -159,7 +161,7 @@ resource "azurerm_storage_account" "agent_data" {
   }
 
   tags = merge({
-    Environment = var.environment
+    Environment = local.environment
     Workload    = var.workload_name
     Purpose     = "agent-data"
   }, var.tags)
@@ -217,7 +219,7 @@ resource "azapi_resource" "foundry_project" {
   }
 
   tags = merge({
-    Environment = var.environment
+    Environment = local.environment
     Workload    = var.workload_name
   }, var.tags)
 

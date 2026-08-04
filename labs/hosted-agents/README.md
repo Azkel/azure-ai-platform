@@ -17,10 +17,10 @@ This lab includes a **BYO Responses** sample agent (based on the [Foundry HelloW
 - **Azure Storage** blob note persistence with the same managed identity
 
 ### Sample Location
-- **Source code**: `labs/hosted-agents/src/`
-- **Main handler**: `src/hello-world-dotnet-responses/Program.cs`
-- **Dockerfile**: `src/hello-world-dotnet-responses/Dockerfile`
-- **Project file**: `src/hello-world-dotnet-responses/HelloWorld.csproj`
+- **Source code**: `labs/hosted-agents/src/storage-kv-agent/`
+- **Main handler**: `storage-kv-agent/Program.cs`
+- **Dockerfile**: `storage-kv-agent/Dockerfile`
+- **Project file**: `storage-kv-agent/StorageKvAgent.csproj`
 
 ### Sample Features
 - Forwards user input to a Foundry model via the Responses API
@@ -142,25 +142,23 @@ Additionally include:
 **Manual Deployment:**
 1. Go to GitHub Actions > Workflows
 2. Run `Terraform Deploy - Hosted Agents` workflow
-3. Select environment (dev, staging, prod)
-4. Select action: `plan` (to review changes), then `apply` (to deploy)
+3. Select action: `plan` (to review changes), then `apply` (to deploy)
 
 **Pull Request:**
 - Changes to Terraform files will automatically trigger a `terraform plan` for review
 
 **Important:** The infrastructure (ACR, Storage, Key Vault, Foundry account with project management enabled) must be deployed before building and deploying the agent.
 
-**Note:** The Foundry Cognitive Account requires `allowProjectManagement=true` to create projects. This is automatically configured by the updated Terraform configuration. If you have existing infrastructure deployed with older configuration, you may need to:
+**Note:** The Foundry Cognitive Account requires `allowProjectManagement=true` to create projects. This is automatically configured by Terraform. If you have existing infrastructure deployed with older configuration, you may need to:
 - Run `terraform apply` again on the updated configuration to enable project management
 - Or manually enable it via Azure CLI: `az cognitiveservices account update --name <account> --resource-group <rg> --allow-project-management true`
 
 ### 4. Build and Deploy the Sample Agent
 
-After infrastructure is deployed, build and deploy the HelloWorld agent:
+After infrastructure is deployed, build and deploy the sample agent:
 
 1. Run the **Docker Build, Push and Deploy - Hosted Agents** workflow
-2. Select the same environment as your infrastructure
-3. The workflow will:
+2. The workflow will:
    - Build the Docker image from the sample source
    - Push it to Azure Container Registry
    - Deploy it to Microsoft Foundry
@@ -198,7 +196,7 @@ module "platform_core" {
 
   workload_name = "hosted-agents"
   location      = "westeurope"
-  environment   = var.environment
+  environment   = local.environment # hardcoded to "dev" for this lab
 
   # Network configuration (172.16/16; required in regions without Class A / 10.x for Agent Service)
   vnet_address_space      = ["172.16.0.0/16"]
@@ -216,7 +214,7 @@ module "platform_core" {
 
 ## CI/CD Pipeline
 
-This lab uses **GitHub Actions** for enterprise-scale CI/CD with dedicated runners (not local developer machines).
+This lab uses **GitHub Actions** with OIDC for deploy and teardown (not local developer machines).
 
 ### Build Pipeline
 
@@ -226,7 +224,7 @@ The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](
 
 **What it does:**
 1. **Validates infrastructure** - Checks that ACR and Foundry project exist (must be deployed first via Terraform)
-2. **Builds Docker image** - Uses `docker/build-push-action` to build the agent image from `labs/hosted-agents/src/src/hello-world-dotnet-responses/Dockerfile`
+2. **Builds Docker image** - Uses `docker/build-push-action` to build the agent image from `labs/hosted-agents/src/storage-kv-agent/Dockerfile`
 3. **Pushes to ACR** - Tags and pushes the image to Azure Container Registry with multiple tags (branch, tag, sha, latest)
 4. **Deploys to Foundry** - Uses `azd ai agent deploy` to deploy the agent to the Foundry project
 5. **Grants RBAC** - Assigns Storage Blob Data Contributor and Key Vault Secrets User to the agent instance identity
@@ -236,12 +234,12 @@ The sample is built using the **[Docker Build, Push and Deploy - Hosted Agents](
 - **Build only**: `skip-deploy: true` - Builds and pushes without deploying
 - **Deploy only**: `deploy-only: true` - Deploys an existing image (uses `latest` tag)
 
-**Naming convention:**
-- ACR name: `acr{workload_no_hyphens}{environment}{location_short}` (e.g., `acrhostedagentsdevweu`)
-- Storage account: `st{workload_no_hyphens}{environment}{location_short}` (e.g., `sthostedagentsdevweu`)
-- Key Vault: `kv-{workload}-{environment}-{location_short}` (e.g., `kv-hosted-agents-dev-weu`)
-- Agent name: `hello-world-dotnet-responses`
-- Image: `{ACR}.azurecr.io/hello-world-dotnet-responses:{tag}`
+**Naming convention** (lab uses a single hardcoded `dev` environment in resource names):
+- ACR name: `acrhostedagentsdevweu`
+- Storage account: `sthostedagentsdevweu`
+- Key Vault: `kv-hosted-agents-dev-weu`
+- Agent name: `storage-kv-agent`
+- Image: `{ACR}.azurecr.io/storage-kv-agent:{tag}`
 
 **References:**
 - [Set up CI/CD with Azure Developer CLI](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/set-up-ci-cd-cli)
@@ -277,12 +275,7 @@ This lab is configured for minimal cost:
 - **Foundry SKU**: S0 (development tier)
 - **Storage**: Standard LRS, shared access keys disabled
 - **Location**: West Europe
-
-For production, consider:
-- Log Analytics: 365-day retention
-- Foundry SKU: F0 or higher
-- Private endpoints / network rules for Storage and Key Vault
-- Additional monitoring and security features
+- **Daily cleanup**: resources are destroyed at 9 PM UTC unless you re-deploy
 
 ## Cleanup
 
@@ -298,16 +291,16 @@ To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC 
 - **To purge immediately** (bypassing the 7-day wait):
   ```bash
   # Purge Cognitive Services / Foundry account
-  az cognitiveservices account purge --name cog-{workload}-{environment}-{location} --resource-group rg-{workload}-{environment}-{location} --location {location}
+  az cognitiveservices account purge --name cog-hosted-agents-dev-weu --resource-group rg-hosted-agents-dev-weu --location westeurope
   
   # Purge Key Vault
-  az keyvault purge --name kv-{workload}-{environment}-{location-short} --location {location}
+  az keyvault purge --name kv-hosted-agents-dev-weu --location westeurope
   
   # Purge ACR (if needed)
-  az acr purge --name acr{workload}{environment}{location-short} --registry acr{workload}{environment}{location-short}.azurecr.io
+  az acr purge --name acrhostedagentsdevweu --registry acrhostedagentsdevweu.azurecr.io
   
   # Delete Application Insights Smart Detection rules (if blocking deletion)
-  az monitor app-insights smart-detection list --resource-group rg-{workload}-{environment}-{location-short} --app appi-{workload}-{environment}-{location-short} | jq -r '.[] | .name' | xargs -I {} az monitor app-insights smart-detection delete --resource-group rg-{workload}-{environment}-{location-short} --app appi-{workload}-{environment}-{location-short} --name {}
+  az monitor app-insights smart-detection list --resource-group rg-hosted-agents-dev-weu --app appi-hosted-agents-dev-weu | jq -r '.[] | .name' | xargs -I {} az monitor app-insights smart-detection delete --resource-group rg-hosted-agents-dev-weu --app appi-hosted-agents-dev-weu --name {}
   ```
 - Consider adding a post-destroy cleanup step in your workflow to purge soft-deleted resources
 
@@ -342,7 +335,6 @@ After deploying your infrastructure and agent, use these methods to validate you
 Run the GitHub Action workflow to build, push, and deploy:
 ```bash
 # Navigate to: Actions > Docker Build, Push and Deploy - Hosted Agents
-# Select environment (dev, staging, prod)
 # Click "Run workflow"
 ```
 
@@ -352,7 +344,7 @@ Or use Azure Developer CLI locally:
 azd ai project set https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project
 
 # Deploy the agent (from labs/hosted-agents/src with azure.yaml image/env configured)
-azd deploy hello-world-dotnet-responses --from-package acrhostedagentsdevweu.azurecr.io/hello-world-dotnet-responses:latest --no-prompt
+azd deploy storage-kv-agent --from-package acrhostedagentsdevweu.azurecr.io/storage-kv-agent:latest --no-prompt
 ```
 
 ### 2. Invoke the Agent
@@ -360,10 +352,10 @@ azd deploy hello-world-dotnet-responses --from-package acrhostedagentsdevweu.azu
 **Using Azure CLI:**
 ```bash
 # Get the agent endpoint
-azd ai agent show --name hello-world-dotnet-responses --output json
+azd ai agent show --name storage-kv-agent --output json
 
 # Invoke the agent
-azd ai agent invoke hello-world-dotnet-responses "What is Microsoft Foundry?"
+azd ai agent invoke storage-kv-agent "What is Microsoft Foundry?"
 ```
 
 **Using curl (direct REST API):**
@@ -375,7 +367,7 @@ TOKEN=$(az account get-access-token --resource https://ai.azure.com --query acce
 FOUNDRY_ENDPOINT="https://hosted-agents-dev-weu.services.ai.azure.com/api/projects/hosted-agents-project"
 
 # Invoke the agent
-curl -X POST "$FOUNDRY_ENDPOINT/agents/hello-world-dotnet-responses/endpoint/protocols/openai/responses?api-version=v1" \
+curl -X POST "$FOUNDRY_ENDPOINT/agents/storage-kv-agent/endpoint/protocols/openai/responses?api-version=v1" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -403,18 +395,18 @@ The agent automatically sends telemetry to Application Insights. To view:
 ```kql
 // All agent requests
 requests
-| where name contains "hello-world-dotnet-responses"
+| where name contains "storage-kv-agent"
 | order by timestamp desc
 
 // Slow requests (> 5 seconds)
 requests
 | where duration > 5000
-| where name contains "hello-world-dotnet-responses"
+| where name contains "storage-kv-agent"
 
 // Failed requests
 requests
 | where success == false
-| where name contains "hello-world-dotnet-responses"
+| where name contains "storage-kv-agent"
 
 // Traces from the agent
 traces
@@ -429,13 +421,13 @@ traces
 azd ai agent list
 
 # Show agent details
-azd ai agent show --name hello-world-dotnet-responses
+azd ai agent show --name storage-kv-agent
 
 # Show agent version status
-azd ai agent version list --name hello-world-dotnet-responses
+azd ai agent version list --name storage-kv-agent
 
 # Stream live logs
-azd ai agent monitor --name hello-world-dotnet-responses
+azd ai agent monitor --name storage-kv-agent
 ```
 
 ### 5. Local Testing (Optional)
@@ -444,7 +436,7 @@ For quick local validation before deploying to Foundry:
 
 ```bash
 # Navigate to the sample directory
-cd labs/hosted-agents/src/src/hello-world-dotnet-responses
+cd labs/hosted-agents/src/storage-kv-agent
 
 # Restore dependencies
 dotnet restore
@@ -469,7 +461,7 @@ curl -X POST http://localhost:8088/responses \
 ### Common Issues
 
 **Agent not responding:**
-- Check agent status: `azd ai agent show --name hello-world-dotnet-responses`
+- Check agent status: `azd ai agent show --name storage-kv-agent`
 - Check version status: Should be `active`
 - Check logs: `azd ai agent monitor`
 
@@ -483,7 +475,7 @@ curl -X POST http://localhost:8088/responses \
 - Check the agent identity has Storage Blob Data Contributor on the storage account and Key Vault Secrets User on the vault:
   ```bash
   AGENT_IDENTITY=$(az rest --method GET \
-    --url "$FOUNDRY_ENDPOINT/agents/hello-world-dotnet-responses?api-version=v1" \
+    --url "$FOUNDRY_ENDPOINT/agents/storage-kv-agent?api-version=v1" \
     --resource "https://ai.azure.com" \
     --query "instance_identity.principal_id" -o tsv)
   az role assignment list --assignee-object-id "$AGENT_IDENTITY" --all -o table
@@ -501,9 +493,4 @@ curl -X POST http://localhost:8088/responses \
 
 ## Support
 
-This is a learning lab. For production deployments, review:
-
-- Security configurations
-- Network isolation requirements
-- Cost management
-- Compliance requirements
+This is a learning lab — a runnable reference for platform patterns around Hosted Agents, not a production template.

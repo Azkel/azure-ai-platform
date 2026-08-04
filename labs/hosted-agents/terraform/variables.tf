@@ -1,14 +1,3 @@
-variable "environment" {
-  description = "Environment name (dev, staging, prod)"
-  type        = string
-  default     = "dev"
-
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be one of: dev, staging, prod"
-  }
-}
-
 variable "workload_name" {
   description = "The workload name for resource naming"
   type        = string
@@ -16,7 +5,7 @@ variable "workload_name" {
 }
 
 variable "acr_sku" {
-  description = "SKU for Azure Container Registry. For labs, use 'Basic' for cost optimization. For production, consider 'Standard' or 'Premium'"
+  description = "SKU for Azure Container Registry (Basic keeps lab cost low)"
   type        = string
   default     = "Basic"
 
@@ -33,7 +22,7 @@ variable "acr_admin_enabled" {
 }
 
 variable "key_vault_sku" {
-  description = "SKU for Azure Key Vault. For labs, use 'standard' for cost optimization. For production, consider 'premium'"
+  description = "SKU for Azure Key Vault (standard keeps lab cost low)"
   type        = string
   default     = "standard"
 

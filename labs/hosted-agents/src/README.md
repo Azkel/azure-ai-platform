@@ -8,13 +8,14 @@ Based on the Microsoft Foundry [bring-your-own HelloWorld](https://github.com/mi
 - `azure.yaml` - Azure Developer CLI configuration (env vars for model, storage, Key Vault)
 - `AGENTS.md` - Coding agent instructions
 - `CLAUDE.md` - Claude Code configuration
-- `src/hello-world-dotnet-responses/` - C# source code
+- `storage-kv-agent/` - C# sample agent
   - `Program.cs` - Responses handler with Blob + SecretClient integration
-  - `HelloWorld.csproj` - .NET project file
+  - `StorageKvAgent.csproj` - .NET project file
   - `Dockerfile` - Container build configuration
   - `.env.example` - Environment variable template
   - `.dockerignore` - Docker ignore patterns
   - `.azdignore` - Azure Developer CLI ignore patterns
+- `hosted-agent-client/` - Simple .NET client to invoke the deployed agent
 
 ## Runtime behavior
 

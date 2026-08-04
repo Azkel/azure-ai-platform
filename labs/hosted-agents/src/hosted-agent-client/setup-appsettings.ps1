@@ -10,7 +10,7 @@
     The name of the Microsoft Foundry project (default: hosted-agents-project)
 
 .PARAMETER AgentName
-    The name of the agent (default: hello-world-dotnet-responses)
+    The name of the agent (default: storage-kv-agent)
 
 .EXAMPLE
     .\setup-appsettings.ps1
@@ -29,7 +29,7 @@
 
 param (
     [string]$ProjectName = "hosted-agents-project",
-    [string]$AgentName = "hello-world-dotnet-responses",
+    [string]$AgentName = "storage-kv-agent",
     [string]$FoundryName = "cog-hosted-agents-dev-weu"
 )
 
