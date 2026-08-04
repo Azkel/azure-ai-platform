@@ -60,5 +60,16 @@ jobs:
     - name: Terraform Destroy
       id: destroy
       run: |
+        set -euo pipefail
         cd labs/hosted-agents/terraform
         terraform destroy -auto-approve -input=false
+
+    - name: Purge soft-deleted Foundry account
+      if: success() || failure()
+      run: |
+        set -euo pipefail
+        chmod +x labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh
+        labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh \
+          westeurope \
+          "rg-hosted-agents-dev-weu" \
+          "cog-hosted-agents-dev-weu"

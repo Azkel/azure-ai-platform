@@ -131,6 +131,14 @@ jobs:
       id: apply
       if: github.event.inputs.action == 'apply'
       run: |
+        set -euo pipefail
+        # Soft-deleted Foundry accounts block recreate under the same name.
+        # Purge any leftover soft-delete before apply (no-op if nothing to purge).
+        chmod +x labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh
+        labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh \
+          westeurope \
+          "rg-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}" \
+          "cog-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"
         cd labs/hosted-agents/terraform
         terraform apply -auto-approve -input=false
 
@@ -138,5 +146,16 @@ jobs:
       id: destroy
       if: github.event.inputs.action == 'destroy'
       run: |
+        set -euo pipefail
         cd labs/hosted-agents/terraform
         terraform destroy -auto-approve -input=false
+
+    - name: Purge soft-deleted Foundry account
+      if: github.event.inputs.action == 'destroy' && (success() || failure())
+      run: |
+        set -euo pipefail
+        chmod +x labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh
+        labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh \
+          westeurope \
+          "rg-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}" \
+          "cog-hosted-agents-${{ env.LAB_ENVIRONMENT }}-${{ env.LOCATION_SHORT }}"

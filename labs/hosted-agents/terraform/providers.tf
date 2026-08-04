@@ -24,8 +24,12 @@ provider "azurerm" {
       purge_soft_delete_on_destroy    = true
       recover_soft_deleted_key_vaults = true
     }
+    # Do NOT purge Foundry/Cognitive accounts inline on destroy.
+    # With agent network injection, Azure often returns 409 "provisioning state
+    # is not terminal" when purge runs immediately after delete. Workflows call
+    # scripts/purge-soft-deleted-foundry.sh (wait + retry) after destroy / before apply.
     cognitive_account {
-      purge_soft_delete_on_destroy = true
+      purge_soft_delete_on_destroy = false
     }
   }
   resource_provider_registrations = "extended"

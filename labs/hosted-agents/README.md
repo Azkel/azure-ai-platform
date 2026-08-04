@@ -287,13 +287,16 @@ To avoid ongoing costs, resources are automatically destroyed daily at 9 PM UTC 
 - **Blob soft-delete**: Disabled on the lab storage account so destroy does not leave soft-deleted blobs behind inside the account.
 - **Purged on destroy via azurerm provider features** (when purge protection allows):
   - **Azure Key Vault**: `purge_soft_delete_on_destroy = true`
-  - **Microsoft Foundry Cognitive Account**: `purge_soft_delete_on_destroy = true` (Azure may still enforce a retention window in some cases)
+- **Microsoft Foundry Cognitive Account**: soft-deleted by Terraform (`purge_soft_delete_on_destroy = false`), then purged by `labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh` with wait/retry. Inline provider purge races agent network-injection teardown and fails with HTTP 409 “provisioning state is not terminal”.
 - **Other soft-delete / retention**:
   - **Azure Container Registry (ACR)**: Soft delete with minimum retention; auto-purged after the retention period
   - **Application Insights**: Smart Detection rules can block deletion in some cases
 - **Manual purge examples** (where Azure supports it):
   ```bash
   # Purge Cognitive Services / Foundry account (if still soft-deleted)
+  labs/hosted-agents/terraform/scripts/purge-soft-deleted-foundry.sh \
+    westeurope rg-hosted-agents-dev-weu cog-hosted-agents-dev-weu
+  # or:
   az cognitiveservices account purge --name cog-hosted-agents-dev-weu --resource-group rg-hosted-agents-dev-weu --location westeurope
   
   # Purge Key Vault (if still soft-deleted)
