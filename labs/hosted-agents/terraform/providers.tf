@@ -18,6 +18,12 @@ terraform {
 
 provider "azurerm" {
   features {
+    # App Insights auto-creates "Application Insights Smart Detection" action
+    # groups that Terraform does not manage. Daily cleanup must delete the RG
+    # even when those leftovers remain.
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
     # Lab recreate cycles: permanently remove soft-deleted resources when possible.
     # Storage accounts have no purge API — Azure reserves the name ~14 days after destroy.
     key_vault {
