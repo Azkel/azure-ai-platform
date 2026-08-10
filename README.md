@@ -1,5 +1,7 @@
 # Azure AI Platform Labs
 
+![Azure AI Platform Labs](./docs/social-preview.png)
+
 Small, practical labs exploring **Platform Engineering for AI-native systems** on Azure.
 
 Public reference and learning project — not a commercial product.
