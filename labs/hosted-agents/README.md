@@ -6,6 +6,13 @@ This lab demonstrates how to deploy infrastructure for **Azure AI Foundry Hosted
 
 Azure AI Foundry Hosted Agents provide a managed environment for running AI workloads with built-in security, scaling, and integration with Azure AI services. This lab provides both the infrastructure foundation and a sample agent that shows how the agent instance identity accesses Azure data-plane resources with Azure RBAC (no storage keys or Key Vault secrets in the image).
 
+### Target Audience
+
+- **Platform Engineers** building AI workload foundations on Azure
+- **DevOps Engineers** implementing CI/CD for AI agents
+- **Cloud Architects** designing secure, scalable AI systems
+- **Developers** learning Azure AI Foundry Hosted Agents patterns
+
 ## Sample: Hosted Agent with Storage + Key Vault
 
 This lab includes a **BYO Responses** sample agent that demonstrates:
@@ -66,6 +73,58 @@ az keyvault secret set \
   --value "Your custom operator message"
 ```
 
+## Architecture
+
+```mermaid
+flowchart LR
+    User -->|POST /responses| Agent
+
+    subgraph Foundry[Microsoft Foundry]
+        Agent[Hosted Agent<br/>storage-kv-agent]
+        Model[Model<br/>gpt-5-mini]
+    end
+
+    Agent -->|Responses API| Model
+    Model -.->|tool calls when needed| Agent
+
+    Agent -->|managed identity| KV[Key Vault]
+    Agent -->|managed identity| SA[Storage]
+
+    Agent -.->|telemetry| AppI[App Insights]
+    ACR[Container Registry] -.->|image| Agent
+```
+
+### Data Flow
+
+1. **User request** → Agent container via `/responses` endpoint
+2. **Agent handler** receives input, calls Foundry model via `ProjectResponsesClient`
+3. **Model** may request tools (Key Vault secret read, Storage blob write/list)
+4. **Agent executes tools** using managed identity (no hardcoded credentials)
+5. **Tool results** fed back to model for final response generation
+6. **Response** returned to user, with telemetry sent to Application Insights
+
+### Security Boundaries
+
+| Component | Identity | Access Method | Permissions |
+|-----------|----------|---------------|-------------|
+| Agent Container | SystemAssigned Managed Identity | Azure AD | Storage Blob Data Contributor, Key Vault Secrets User, AcrPull |
+| Terraform Deployer | GitHub OIDC / User | Azure AD | Foundry User, Contributor on RG, Key Vault Administrator |
+| Local Developer | Azure CLI | Azure AD | Granted via `additional_*_principal_ids` variables |
+
+**Network**: VNet injection isolates Foundry account; Storage/Key Vault accessible via Azure AD auth only (no account keys).
+
+## Learning Outcomes
+
+By completing this lab, you will learn:
+
+- **Infrastructure as Code for AI**: How to deploy Microsoft Foundry, networking, storage, and identity using Terraform
+- **Managed Identity Pattern**: Secure Azure resource access without hardcoded credentials using agent instance identity
+- **BYO Responses Protocol**: Implementing a custom agent using the Responses protocol with .NET 10 and the Azure.AI.AgentServer.Responses SDK
+- **On-Demand Tool Integration**: Building function tools for Key Vault and Storage that the model calls only when needed
+- **Foundry Hosted Agents Lifecycle**: From Terraform infrastructure to azd deploy, including RBAC assignment for the agent identity
+- **Telemetry and Observability**: Automatic Application Insights integration with OpenTelemetry via the AgentServer SDK
+- **CI/CD for Agents**: GitHub Actions workflows for Terraform deployment and Docker build/push/deploy
+
 ## What This Lab Provides
 
 This lab deploys infrastructure using the shared `platform-core` module plus lab-specific resources:
@@ -88,12 +147,14 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 ## Prerequisites
 
 ### Azure Tools
-- **Azure subscription**
-- **Azure CLI** installed and logged in
+- **Azure subscription** with Contributor or Owner permissions
+- **Azure CLI** (≥ 2.50.0) installed and logged in
+  - Verify: `az --version`
 - **Azure Developer CLI (`azd`)** - Required for agent deployment
   - [Installation Guide](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
   - Verify: `azd --version`
 - **GitHub repository** with GitHub Actions enabled
+- **Permissions required**: Contributor on resource group, or Owner on subscription
 
 ### Development Tools (for local testing)
 - **.NET 10 SDK** - Required to build and run the sample locally
@@ -107,6 +168,11 @@ This lab deploys infrastructure using the shared `platform-core` module plus lab
 This lab targets **West Europe** (`westeurope` / `weu`). Hosted Agents data-plane APIs were verified there; Poland Central control-plane deploy can succeed while project/agent APIs return `Project not found`.
 
 ## Quick Start
+
+**Expected deployment time**: ~15-20 minutes (Terraform apply: 10-15 min, Docker build/push/deploy: 5-10 min)
+**Time to first demo**: ≤ 30 minutes (deploy + test + validate)
+
+**Smoke test**: After both Actions workflows succeed, run `./demo.sh` from this directory to resolve the live lab RG and prove Key Vault + Storage tool calls (optional; curl samples below work the same).
 
 Follow these steps to deploy the infrastructure and sample agent:
 
@@ -276,6 +342,71 @@ This lab is configured for minimal cost:
 - **Storage**: Standard LRS, shared access keys disabled
 - **Location**: West Europe
 - **Daily cleanup**: resources are destroyed at 9 PM UTC unless you re-deploy
+- **Estimated cost**: ~$2-5/day for active lab (Foundry S0 + model deployment + Storage + KV + ACR + App Insights)
+
+## Operational Considerations
+
+### Monitoring Setup
+
+Application Insights is automatically integrated with the Foundry project. The agent exports OpenTelemetry traces when `APPLICATIONINSIGHTS_CONNECTION_STRING` is present (auto-injected by Foundry). See [Monitoring](#monitoring) section for query examples.
+
+### Scaling Notes
+
+This lab is designed for **development and demonstration**, not production scaling:
+- **Foundry SKU**: S0 (development tier) — not suitable for production workloads
+- **Model capacity**: 10 TPM (thousands of tokens per minute) — sufficient for lab testing
+- **Agent container**: 0.5 CPU, 1Gi memory — minimal resources for the sample agent
+- **Single agent instance**: The lab deploys one agent; production would need multiple instances behind a load balancer
+- **No autoscaling**: Foundry Hosted Agents do not currently support autoscaling in this configuration
+
+For production workloads, consider:
+- Upgrading to Foundry S1/S2 SKUs
+- Increasing model capacity based on expected load
+- Deploying multiple agent instances
+- Implementing queue-based workload distribution
+
+### Known Limitations
+
+| Limitation | Impact | Workaround |
+|------------|--------|------------|
+| Region support | Hosted Agents APIs verified in West Europe; Poland Central control-plane works but data-plane returns "Project not found" | Use West Europe for this lab |
+| Soft-delete retention | Storage account names reserved for ~14 days after deletion | 4-digit random suffix prevents naming collisions |
+| App Insights injection | `APPLICATIONINSIGHTS_CONNECTION_STRING` only injected if project has AppInsights connection | Terraform creates this connection automatically |
+| RBAC propagation delay | Role assignments for agent identity may take 1-2 minutes to propagate | Wait before invoking agent after deploy |
+| Model availability | gpt-5-mini may have quota limits or regional availability | Use alternative models if needed |
+| Local testing | Requires manually granting developer identity Storage/Key Vault RBAC | Use `additional_*_principal_ids` Terraform variables |
+| Local `azd deploy` | Interactive user may get 403 on `agents/write`; OIDC deployer in Actions has the required role | Use **Docker Build, Push and Deploy** workflow for agent deploy |
+| Foundry account concurrency | Concurrent model deployment + project create can 409 (`RequestConflict`) | Terraform serializes project after model deploy and retries 409s |
+
+### Trade-offs and Decisions Made
+
+| Decision | Rationale | Alternative Considered | Why Not |
+|----------|-----------|----------------------|---------|
+| **Azure RBAC for Key Vault** | Simpler management, no access policy complexity, works well with frequent recreate cycles | Key Vault access policies | More complex to manage, especially with lab recreate cycles |
+| **BYO Responses Protocol** | Maximum flexibility, full control over agent behavior, .NET native | Azure-native agent SDKs | Less flexible, may not support all custom tool patterns |
+| **Managed Identity for agent** | Secure, no secrets in container, Azure AD integration | Service Principal / API keys | Secrets would need to be injected, less secure |
+| **Storage with Azure AD auth only** | More secure, no account keys to rotate | Shared access keys | Less secure, key rotation complexity |
+| **GitHub Actions with OIDC** | Secure, no long-lived credentials | Service principal with secrets | Secrets management overhead |
+| **Terraform for IaC** | Mature, multi-cloud, strong community | Bicep | Azure-only, less flexible for multi-cloud patterns |
+| **Daily auto-cleanup** | Prevents cost overruns from forgotten labs | Manual cleanup only | Easy to forget, leads to unexpected costs |
+| **4-digit random storage suffix** | Avoids soft-delete name collision | Static names | Would block recreate for 14 days after destroy |
+
+### When to Use This Pattern vs Alternatives
+
+**Use this pattern when:**
+- You need **secure, managed agent hosting** without infrastructure management
+- You want **built-in Azure integration** (identity, networking, monitoring)
+- Your workloads are **event-driven or request-based** (not long-running)
+- You need **Azure resource access** from your agent (Storage, Key Vault, etc.)
+- You prefer **BYO container approach** with full code control
+
+**Consider alternatives when:**
+- You need **GPU acceleration** — use Azure Container Apps with GPU or AKS
+- You need **long-running background jobs** — use Azure Functions or Container Apps Jobs
+- You need **custom scaling logic** — use AKS with custom operators
+- You need **non-Azure cloud deployment** — use open-source agent frameworks (LangGraph, CrewAI)
+- You need **lower latency** — consider Azure OpenAI direct calls for simple prompts
+- You have **very high throughput** — multiple agent instances may be needed
 
 ## Cleanup
 
@@ -378,6 +509,24 @@ curl -X POST "$FOUNDRY_ENDPOINT/agents/storage-kv-agent/endpoint/protocols/opena
 ```
 
 After a successful invoke, confirm a blob appears under `notes/` in the `agent-notes` container, and that the model reply reflects the Key Vault demo message.
+
+**Expected successful output:**
+```
+User: What is the operator demo message stored in Key Vault?
+Agent: Smykpol Labs — greet callers as a concise platform engineer.
+
+User: Save a note that says test complete
+Agent: Wrote blob 'notes/20260808T123456789Z-response-id.txt'.
+
+User: List the recent note blobs you can see
+Agent: notes/20260808T123456789Z-response-id.txt
+```
+
+**Screenshot** — `hosted-agent-client` after deploy, showing tool discovery:
+
+![Hosted agent CLI: tools list](./docs/hosted-agent-client-tools-demo.png)
+
+*Also good to confirm a blob under `notes/` in the `agent-notes` container after a persist/list turn.*
 
 ### 3. Monitor with Application Insights
 
@@ -497,3 +646,24 @@ curl -X POST http://localhost:8088/responses \
 ## Support
 
 This is a learning lab — a runnable reference for platform patterns around Hosted Agents, not a production template.
+
+---
+
+## Metadata
+
+| Property | Value |
+|----------|-------|
+| **Lab Version** | v1.0 |
+| **Last Tested** | 2026-08-10 |
+| **Maintainer** | [Michał Smyk](https://github.com/Azkel) / [@smyk](https://smyk.it/) |
+| **Contact** | michal@smyk.it |
+| **Status** | Demoable |
+| **Maturity** | Learning reference (not production-ready) |
+
+### Related Documentation
+
+- [Microsoft Learn: Azure AI Foundry Hosted Agents](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents)
+- [Azure AI Foundry Documentation](https://learn.microsoft.com/en-us/azure/foundry/)
+- [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/)
+- [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest)
+- [Author Blog](https://blog.smyk.it/) — Deep dives on Azure AI patterns
