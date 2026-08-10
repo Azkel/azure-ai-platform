@@ -224,10 +224,11 @@ resource "azurerm_role_assignment" "additional_kv_secrets_users" {
 # Using azapi provider to create the project under the Foundry account
 # Resource type: Microsoft.CognitiveServices/accounts/projects
 # Note: In azapi v2.x+, body must be an HCL object, not a JSON string
-# 
-# IMPORTANT: This resource depends on the platform_core module having completed
-# the azapi_update_resource.foundry_enable_projects which sets allowProjectManagement=true
-# on the Foundry account. The explicit depends_on ensures proper ordering.
+#
+# IMPORTANT: Create the account-scoped model deployment BEFORE the project.
+# Concurrent PUTs on the Cognitive account (deployment + project) frequently
+# return 409 RequestConflict: "Another operation is in progress on the resource"
+# (see Actions run 31385851423). depends_on serializes; retry covers residual races.
 resource "azapi_resource" "foundry_project" {
   type      = "Microsoft.CognitiveServices/accounts/projects@2026-05-01"
   name      = var.foundry_project_name
@@ -257,8 +258,31 @@ resource "azapi_resource" "foundry_project" {
   # Export identity so we can grant ACR pull to the project MI
   response_export_values = ["identity"]
 
-  # Ensure Foundry User role is assigned before creating projects
-  depends_on = [module.platform_core.foundry_user_role_assignment_id]
+  retry = {
+    error_message_regex = [
+      "RequestConflict",
+      "Another operation is in progress",
+      "AnotherOperationInProgress",
+    ]
+    interval_seconds     = 20
+    max_interval_seconds = 180
+    multiplier           = 1.5
+    randomization_factor = 0.5
+  }
+
+  timeouts {
+    create = "30m"
+    update = "30m"
+    delete = "30m"
+  }
+
+  depends_on = [
+    module.platform_core.foundry_user_role_assignment_id,
+    azurerm_cognitive_deployment.agent_model,
+    azurerm_role_assignment.foundry_account_acr_pull,
+    azurerm_role_assignment.foundry_account_acr_repo_reader,
+    azurerm_role_assignment.foundry_account_kv_secrets_user,
+  ]
 }
 
 # Model deployment used by the hosted agent (AZURE_AI_MODEL_DEPLOYMENT_NAME).

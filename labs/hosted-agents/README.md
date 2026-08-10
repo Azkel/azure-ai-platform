@@ -376,6 +376,7 @@ For production workloads, consider:
 | Model availability | gpt-5-mini may have quota limits or regional availability | Use alternative models if needed |
 | Local testing | Requires manually granting developer identity Storage/Key Vault RBAC | Use `additional_*_principal_ids` Terraform variables |
 | Local `azd deploy` | Interactive user may get 403 on `agents/write`; OIDC deployer in Actions has the required role | Use **Docker Build, Push and Deploy** workflow for agent deploy |
+| Foundry account concurrency | Concurrent model deployment + project create can 409 (`RequestConflict`) | Terraform serializes project after model deploy and retries 409s |
 
 ### Trade-offs and Decisions Made
 
