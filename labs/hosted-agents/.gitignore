@@ -1,0 +1,40 @@
+# Lab-specific gitignore for hosted-agents
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Azure CLI / azd local files
+.azure/
+
+# Terraform local state (if not using remote backend)
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.json
+
+# IDE / Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Local test/output files
+*.log
+test-output/
+
+# Local build artifacts (if any)
+bin/
+obj/
+
+# Local notes / private Definition of Done checklist
+demo-notes.md
+DoD.md
+
+# demo.sh runtime state
+.demo-state
