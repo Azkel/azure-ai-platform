@@ -656,7 +656,7 @@ This is a learning lab — a runnable reference for platform patterns around Hos
 | **Lab Version** | v1.0 |
 | **Last Tested** | 2026-08-10 |
 | **Maintainer** | [Michał Smyk](https://github.com/Azkel) / [@smyk](https://smyk.it/) |
-| **Contact** | michal.smyk@gmail.com |
+| **Contact** | michal@smyk.it |
 | **Status** | Demoable |
 | **Maturity** | Learning reference (not production-ready) |
 
