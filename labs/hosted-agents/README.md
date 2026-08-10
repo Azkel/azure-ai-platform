@@ -522,9 +522,9 @@ User: List the recent note blobs you can see
 Agent: notes/20260808T123456789Z-response-id.txt
 ```
 
-**Screenshot** — `hosted-agent-client` after deploy, showing tool discovery and Key Vault read:
+**Screenshot** — `hosted-agent-client` after deploy, showing tool discovery:
 
-![Hosted agent CLI: tools list and Key Vault demo secret](./docs/hosted-agent-client-kv-demo.jpg)
+![Hosted agent CLI: tools list](./docs/hosted-agent-client-tools-demo.png)
 
 *Also good to confirm a blob under `notes/` in the `agent-notes` container after a persist/list turn.*
 
