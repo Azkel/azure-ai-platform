@@ -662,8 +662,9 @@ This is a learning lab — a runnable reference for platform patterns around Hos
 
 ### Related Documentation
 
+- [Chat, files, and Terraform — building AI on Azure](https://smyk.it/posts/2026/azure-ai-foundry-terraform/) — SysOps #25 English write-up (closest published cousin to this lab)
+- [Talks](https://smyk.it/talks/) — recordings and write-ups
 - [Microsoft Learn: Azure AI Foundry Hosted Agents](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents)
 - [Azure AI Foundry Documentation](https://learn.microsoft.com/en-us/azure/foundry/)
 - [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/)
 - [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest)
-- [Author Blog](https://blog.smyk.it/) — Deep dives on Azure AI patterns
