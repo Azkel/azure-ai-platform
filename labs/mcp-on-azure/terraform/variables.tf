@@ -83,7 +83,7 @@ variable "entra_client_secret" {
 }
 
 variable "additional_storage_blob_data_reader_principal_ids" {
-  description = "Extra Entra object IDs granted Storage Blob Data Reader on the demo container only (not the platform-only container)."
+  description = "Optional IaC-managed readers on mcp-demo only. Prefer scripts/grant-demo-blob-reader.sh for meetup demos (explicit, not baked into core apply)."
   type        = list(string)
   default     = []
 }

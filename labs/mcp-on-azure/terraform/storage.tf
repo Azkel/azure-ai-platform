@@ -82,7 +82,8 @@ resource "azurerm_private_endpoint" "blob" {
   }
 }
 
-# Operators / demo users — demo container only (so platform-only stays MI-only).
+# Operators / demo users — prefer scripts/grant-demo-blob-reader.sh (explicit
+# demo-only RBAC). This variable remains for rare IaC-managed readers.
 resource "azurerm_role_assignment" "extra_storage_readers" {
   for_each = toset(var.additional_storage_blob_data_reader_principal_ids)
 

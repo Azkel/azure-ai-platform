@@ -54,7 +54,6 @@ echo "== seed blobs =="
 # then remove it so user.* cannot read mcp-platform-only.
 OID="$(az ad signed-in-user show --query id -o tsv)"
 SCOPE_ID="$(az storage account show -n "$ST" --query id -o tsv)"
-CT_SCOPE="${SCOPE_ID}/blobServices/default/containers/${CT}"
 
 az role assignment create --assignee-object-id "$OID" --assignee-principal-type User \
   --role "Storage Blob Data Contributor" --scope "$SCOPE_ID" -o none 2>/dev/null || true
@@ -72,10 +71,8 @@ echo "narrowing your data-plane rights to ${CT} reader only..."
 for role in "Storage Blob Data Contributor" "Storage Blob Data Owner" "Storage Blob Data Reader"; do
   az role assignment delete --assignee-object-id "$OID" --role "$role" --scope "$SCOPE_ID" -o none 2>/dev/null || true
 done
-az role assignment create --assignee-object-id "$OID" --assignee-principal-type User \
-  --role "Storage Blob Data Reader" --scope "$CT_SCOPE" -o none 2>/dev/null || true
-echo "waiting for narrowed RBAC..."
-sleep 30
+# Demo-only Reader on mcp-demo (explicit script — not Terraform).
+DEMO_RBAC_WAIT_SECONDS=30 ./scripts/grant-demo-blob-reader.sh "$OID"
 
 echo "== wait for revision =="
 for i in $(seq 1 30); do

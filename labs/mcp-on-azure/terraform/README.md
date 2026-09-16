@@ -59,6 +59,17 @@ terraform output entra_client_id
 terraform output entra_scope
 ```
 
+## Demo RBAC (post-apply script)
+
+Meetup `user_get_blob` needs **Storage Blob Data Reader** on `mcp-demo` only. That grant is intentionally **not** core Terraform — run after apply:
+
+```bash
+./scripts/grant-demo-blob-reader.sh
+# or: DEMO_BLOB_READER_OBJECT_IDS=oid1,oid2 ./scripts/grant-demo-blob-reader.sh
+```
+
+Does not touch `mcp-platform-only` (deny demo). GitHub **up** runs the same script when repo variable `DEMO_BLOB_READER_OBJECT_IDS` is set.
+
 ## Destroy
 
 Prefer the GitHub **down** workflow (it runs `scripts/teardown.sh`). Plain `terraform destroy` often hangs on a VNet-injected Container Apps Environment stuck in `ScheduledForDelete`.

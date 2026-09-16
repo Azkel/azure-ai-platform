@@ -34,6 +34,9 @@ env:
   DNS_ZONE_NAME: azure.smyk.it
   DNS_ZONE_RG: rg-shared-plc-prod
   IMAGE_TAG: ${{ github.run_number }}
+  # Demo-only blob readers (Entra object IDs, comma-separated). Set as a repo/env
+  # variable — not Terraform. Empty skips the grant step.
+  DEMO_BLOB_READER_OBJECT_IDS: ${{ vars.DEMO_BLOB_READER_OBJECT_IDS }}
 
 jobs:
   demo:
@@ -191,6 +194,15 @@ jobs:
           upload "$CT" "hello.txt" $'hello from mcp lab\n'
           upload "$CT_PO" "platform-only.txt" $'platform identity only — user.* should get 403\n'
 
+      - name: Grant demo blob reader (meetup callers)
+        if: steps.meta.outputs.action == 'up' && env.DEMO_BLOB_READER_OBJECT_IDS != ''
+        run: |
+          set -euo pipefail
+          chmod +x scripts/grant-demo-blob-reader.sh
+          # Explicit demo RBAC — not Terraform. mcp-demo Reader only; platform-only untouched.
+          DEMO_BLOB_READER_OBJECT_IDS="${DEMO_BLOB_READER_OBJECT_IDS}" \
+            ./scripts/grant-demo-blob-reader.sh
+
       - name: Print demo URL
         if: steps.meta.outputs.action == 'up'
         run: |
@@ -210,6 +222,7 @@ jobs:
             echo "  Entra tenant:                       ${TENANT}"
             echo "  Entra client id:                    ${CLIENT}"
             echo "  Entra scope:                        ${SCOPE}"
+            echo "  Demo RBAC:                          scripts/grant-demo-blob-reader.sh (mcp-demo Reader only)"
             echo "============================================================"
             echo "  Token: az account get-access-token --scope \"${SCOPE}\" -o tsv --query accessToken"
             echo "============================================================"

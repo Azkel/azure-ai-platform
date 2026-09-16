@@ -91,6 +91,15 @@ curl -sS -D - -o /dev/null -X POST https://mcp.azure.smyk.it/mcp \
 | `platform_list_blobs` | Container App managed identity |
 | `user_get_blob` | Caller → OBO → Storage. Data Reader on `mcp-demo` only; `mcp-platform-only` stays MI-only |
 
+After apply, grant meetup callers (or yourself) demo-only Reader on `mcp-demo` — **not** via core Terraform:
+
+```bash
+cd labs/mcp-on-azure/terraform
+./scripts/grant-demo-blob-reader.sh                  # signed-in user
+./scripts/grant-demo-blob-reader.sh <entra-object-id>
+# CI: set repo variable DEMO_BLOB_READER_OBJECT_IDS (comma-separated)
+```
+
 ## Smoke script
 
 ```bash

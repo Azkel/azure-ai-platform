@@ -4,6 +4,8 @@
 subscription_id = "00000000-0000-0000-0000-000000000000"
 
 # Optional: your Entra object ID so user.* can read mcp-demo/hello.txt (container-scoped).
+# Prefer the post-apply demo script instead of baking this into Terraform:
+#   ./scripts/grant-demo-blob-reader.sh
 # Does NOT grant mcp-platform-only — that stays MI-only for the deny demo.
 # additional_storage_blob_data_reader_principal_ids = ["xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"]
 

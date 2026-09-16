@@ -23,7 +23,7 @@ These apply regardless of runtime or gateway. v1 binds them to Container Apps an
 | Isolated runtime | MCP runs inside a private boundary, not as a public shortcut into internal networks |
 | Downstream identity | Each tool uses an explicit auth model - workload identity or user-scoped token - not an implicit default |
 | Guardrails first | Read-only tools until ingress and identity are proven; write capability comes later |
-| Deployable and teardown-friendly | IaC, predictable cost for a public try-it-yourself lab |
+| Deployable and teardown-friendly | IaC, ephemeral demo windows (not always online), predictable cost |
 
 ## Architecture (v1)
 

@@ -35,4 +35,4 @@ AI workloads on Azure call PaaS (Storage, Key Vault, ...). Teams often reach for
 ## References
 
 - [MCP architecture - two auth patterns](../../labs/mcp-on-azure/docs/architecture.md)
-- Hosted Agents agent identity / RBAC sections in [labs/hosted-agents/README.md](../../labs/hosted-agents/README.md)
+- Hosted Agents agent identity / RBAC in [labs/hosted-agents/docs/architecture.md](../../labs/hosted-agents/docs/architecture.md)
