@@ -1,0 +1,187 @@
+name: MCP on Azure — demo up / down
+
+# Spin up the Acceler8it follow-up lab before a talk, or tear it down to stop spend.
+# After "up", the public URL is printed as a conspicuous log banner.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "up = deploy demo stack · down = destroy everything"
+        required: true
+        type: choice
+        default: up
+        options:
+          - up
+          - down
+  schedule:
+    # Safety net: destroy nightly if someone forgot (same idea as Hosted Agents cleanup)
+    - cron: "0 21 * * *"
+
+env:
+  TF_STATE_RESOURCE_GROUP: ${{ secrets.TF_STATE_RESOURCE_GROUP }}
+  TF_STATE_STORAGE_ACCOUNT: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
+  TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
+  TF_STATE_KEY: mcp-on-azure-dev.tfstate
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_AZUREAD: true
+  ARM_USE_OIDC: true
+  LAB_DIR: labs/mcp-on-azure
+  TF_DIR: labs/mcp-on-azure/terraform
+  CUSTOM_HOSTNAME: mcp.azure.smyk.it
+  DNS_ZONE_NAME: azure.smyk.it
+  DNS_ZONE_RG: rg-shared-plc-prod
+  IMAGE_TAG: ${{ github.run_number }}
+
+jobs:
+  demo:
+    name: ${{ (github.event_name == 'schedule' && 'down') || inputs.action }}
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: labs/mcp-on-azure/terraform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve action
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "action=down" >> "$GITHUB_OUTPUT"
+          else
+            echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.2"
+          terraform_wrapper: false
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${TF_STATE_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TF_STATE_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TF_STATE_CONTAINER}" \
+            -backend-config="key=${TF_STATE_KEY}"
+
+      - name: Terraform destroy
+        if: steps.meta.outputs.action == 'down'
+        run: |
+          set -euo pipefail
+          terraform destroy -auto-approve -input=false \
+            -var="subscription_id=${ARM_SUBSCRIPTION_ID}" \
+            -var="use_oidc=true" \
+            -var="custom_hostname=${CUSTOM_HOSTNAME}" \
+            -var="dns_zone_name=${DNS_ZONE_NAME}" \
+            -var="dns_zone_resource_group_name=${DNS_ZONE_RG}"
+          echo ""
+          echo "============================================================"
+          echo "  MCP on Azure demo DESTROYED"
+          echo "  (scheduled or manual down — spend stopped)"
+          echo "============================================================"
+
+      - name: Terraform apply (infra)
+        if: steps.meta.outputs.action == 'up'
+        run: |
+          set -euo pipefail
+          terraform apply -auto-approve -input=false \
+            -var="subscription_id=${ARM_SUBSCRIPTION_ID}" \
+            -var="use_oidc=true" \
+            -var="custom_hostname=${CUSTOM_HOSTNAME}" \
+            -var="dns_zone_name=${DNS_ZONE_NAME}" \
+            -var="dns_zone_resource_group_name=${DNS_ZONE_RG}"
+
+      - name: Build and push MCP image
+        if: steps.meta.outputs.action == 'up'
+        working-directory: labs/mcp-on-azure
+        run: |
+          set -euo pipefail
+          ACR="$(terraform -chdir=terraform output -raw acr_login_server)"
+          ACR_NAME="${ACR%%.*}"
+          RG="$(terraform -chdir=terraform output -raw resource_group_name)"
+          TAG="0.1.${IMAGE_TAG}"
+          echo "Building ${ACR}/mcp-on-azure:${TAG}"
+          az acr build -r "$ACR_NAME" -g "$RG" \
+            -t "mcp-on-azure:${TAG}" \
+            -t "mcp-on-azure:latest" \
+            ./src
+          echo "MCP_IMAGE=${ACR}/mcp-on-azure:${TAG}" >> "$GITHUB_ENV"
+
+      - name: Terraform apply (image)
+        if: steps.meta.outputs.action == 'up'
+        run: |
+          set -euo pipefail
+          terraform apply -auto-approve -input=false \
+            -var="subscription_id=${ARM_SUBSCRIPTION_ID}" \
+            -var="use_oidc=true" \
+            -var="custom_hostname=${CUSTOM_HOSTNAME}" \
+            -var="dns_zone_name=${DNS_ZONE_NAME}" \
+            -var="dns_zone_resource_group_name=${DNS_ZONE_RG}" \
+            -var="mcp_image=${MCP_IMAGE}"
+
+      - name: Bind custom domain certificate
+        if: steps.meta.outputs.action == 'up'
+        run: |
+          set -euo pipefail
+          chmod +x scripts/bind-custom-domain.sh
+          ./scripts/bind-custom-domain.sh || true
+
+      - name: Seed demo blobs
+        if: steps.meta.outputs.action == 'up'
+        run: |
+          set -euo pipefail
+          ST="$(terraform output -raw storage_account_name)"
+          CT="$(terraform output -raw storage_container_name)"
+          CT_PO="$(terraform output -raw storage_platform_only_container_name)"
+          OID="$(az ad sp show --id "${ARM_CLIENT_ID}" --query id -o tsv)"
+          SCOPE_ID="$(az storage account show -n "$ST" --query id -o tsv)"
+          az role assignment create --assignee-object-id "$OID" --assignee-principal-type ServicePrincipal \
+            --role "Storage Blob Data Contributor" --scope "$SCOPE_ID" -o none 2>/dev/null || true
+          sleep 25
+          printf 'hello from mcp lab\n' | az storage blob upload \
+            --account-name "$ST" --container-name "$CT" --name hello.txt \
+            --data @- --auth-mode login --overwrite -o none
+          printf 'platform identity only — user.* should get 403\n' | az storage blob upload \
+            --account-name "$ST" --container-name "$CT_PO" --name platform-only.txt \
+            --data @- --auth-mode login --overwrite -o none
+
+      - name: Print demo URL
+        if: steps.meta.outputs.action == 'up'
+        run: |
+          set -euo pipefail
+          ENDPOINT="$(terraform output -raw mcp_endpoint)"
+          SCOPE="$(terraform output -raw entra_scope)"
+          CLIENT="$(terraform output -raw entra_client_id)"
+          TENANT="$(terraform output -raw entra_tenant_id)"
+          {
+            echo ""
+            echo "============================================================"
+            echo "  MCP on Azure — DEMO READY"
+            echo "============================================================"
+            echo "  Landing page (config for VS Code):  ${ENDPOINT}/"
+            echo "  MCP endpoint:                       ${ENDPOINT}/mcp"
+            echo "  Health:                             ${ENDPOINT}/health"
+            echo "  Entra tenant:                       ${TENANT}"
+            echo "  Entra client id:                    ${CLIENT}"
+            echo "  Entra scope:                        ${SCOPE}"
+            echo "============================================================"
+            echo "  Token: az account get-access-token --scope \"${SCOPE}\" -o tsv --query accessToken"
+            echo "============================================================"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
