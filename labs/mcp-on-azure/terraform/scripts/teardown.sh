@@ -29,10 +29,37 @@ need az; need terraform; need jq
 
 TF_VARS=("$@")
 
-echo "== resolve lab names from state (fallbacks if outputs missing) =="
-RG="$(terraform output -raw resource_group_name 2>/dev/null || true)"
-CAE="$(terraform output -raw container_app_environment_name 2>/dev/null || true)"
-CA="$(terraform output -raw container_app_name 2>/dev/null || true)"
+# Accept only clean Azure resource names (terraform output can print warnings to stdout
+# when outputs are missing — never treat that as a name).
+sanitize_name() {
+  local v="$1"
+  if [[ "$v" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$ ]]; then
+    printf '%s' "$v"
+  else
+    printf ''
+  fi
+}
+
+tf_name_from_state() {
+  local addr="$1" attr="${2:-name}"
+  terraform state show -json "$addr" 2>/dev/null \
+    | jq -r --arg a "$attr" '.values[$a] // empty' 2>/dev/null || true
+}
+
+echo "== resolve lab names from state (fallbacks if missing) =="
+RG="$(sanitize_name "$(tf_name_from_state azurerm_resource_group.rg)")"
+CAE="$(sanitize_name "$(tf_name_from_state azurerm_container_app_environment.cae)")"
+CA="$(sanitize_name "$(tf_name_from_state azurerm_container_app.mcp)")"
+# Outputs only as a secondary source (suppress warnings).
+if [[ -z "$RG" ]]; then
+  RG="$(sanitize_name "$(terraform output -raw resource_group_name 2>/dev/null || true)")"
+fi
+if [[ -z "$CAE" ]]; then
+  CAE="$(sanitize_name "$(terraform output -raw container_app_environment_name 2>/dev/null || true)")"
+fi
+if [[ -z "$CA" ]]; then
+  CA="$(sanitize_name "$(terraform output -raw container_app_name 2>/dev/null || true)")"
+fi
 
 # Fallbacks match terraform naming defaults (dev / westeurope).
 RG="${RG:-rg-mcp-on-azure-dev-weu}"
@@ -42,6 +69,12 @@ CA="${CA:-ca-mcp-dev-weu}"
 echo "  resource group: ${RG}"
 echo "  container app:  ${CA}"
 echo "  CAE:            ${CAE}"
+
+# Optional: clear a lock left by a cancelled Actions run.
+if [[ -n "${TF_LOCK_ID:-}" ]]; then
+  echo "== force-unlock ${TF_LOCK_ID} =="
+  terraform force-unlock -force "$TF_LOCK_ID" || true
+fi
 
 rg_exists() {
   az group show -n "$RG" -o none 2>/dev/null
@@ -84,7 +117,11 @@ delete_or_wait_cae() {
   fi
 
   echo "== CAE state: ${state} =="
-  if [[ "$state" != "ScheduledForDelete" && "$state" != "Deleting" ]]; then
+  # Already deleting: don't hope Terraform/Azure finishes — short wait then RG delete.
+  if [[ "$state" == "ScheduledForDelete" || "$state" == "Deleting" ]]; then
+    echo "  CAE already deleting — waiting briefly, then RG fallback if needed"
+    CAE_WAIT_MINUTES="${CAE_STUCK_WAIT_MINUTES:-3}"
+  elif [[ "$state" != "Gone" ]]; then
     echo "  requesting az containerapp env delete..."
     az containerapp env delete -g "$RG" -n "$CAE" --yes --no-wait 2>/dev/null || true
   fi
