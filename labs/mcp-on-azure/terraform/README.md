@@ -13,6 +13,18 @@ Remote state uses the shared lab backend (see `backend.hcl.example`). GitHub Act
 - `terraform.tfvars` from `terraform.tfvars.example` (gitignored)
 - `backend.hcl` from `backend.hcl.example` (or `-backend-config` flags)
 
+### GitHub Actions OIDC (Graph)
+
+The Actions deployer needs **Microsoft Graph application permissions**, not only Azure RBAC. Hosted Agents can deploy with Contributor + state storage; this lab also manages Entra apps and delegated grants via the `azuread` provider.
+
+| Application permission | Purpose |
+|------------------------|---------|
+| `Application.ReadWrite.All` | Lab app registration lifecycle |
+| `Directory.Read.All` | Look up Graph / Storage service principals |
+| `DelegatedPermissionGrant.ReadWrite.All` | OBO consent grants (`User.Read`, Storage `user_impersonation`) |
+
+Missing these shows up as `403` on `data.azuread_service_principal.*` during plan/apply/destroy. How to grant: [OIDC setup Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure) · also summarized in [docs/run.md](../docs/run.md#github-actions-talk--meetup).
+
 ## Apply (local)
 
 ```bash
@@ -49,9 +61,21 @@ terraform output entra_scope
 
 ## Destroy
 
+Prefer the GitHub **down** workflow (it runs `scripts/teardown.sh`). Plain `terraform destroy` often hangs on a VNet-injected Container Apps Environment stuck in `ScheduledForDelete`.
+
 ```bash
+# Local (same path as CI):
+./scripts/teardown.sh \
+  -var="subscription_id=$SUB" \
+  -var="custom_hostname=mcp.azure.smyk.it" \
+  -var="dns_zone_name=azure.smyk.it" \
+  -var="dns_zone_resource_group_name=rg-shared-plc-prod"
+
+# Escape hatch only:
 terraform destroy
 ```
+
+`teardown.sh` deletes Container Apps via Azure CLI, waits on CAE delete, falls back to **resource group delete** if the CAE is still stuck, prunes gone resources from state, then `terraform destroy` for Entra + shared DNS.
 
 Storage account names are reserved ~14 days after delete; a random suffix avoids collisions on recreate.
 

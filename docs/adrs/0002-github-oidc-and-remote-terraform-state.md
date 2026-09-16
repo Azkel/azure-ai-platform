@@ -21,6 +21,7 @@ Public labs need a deploy/teardown path that works for the author and for GitHub
 ## Consequences
 
 - Setup cost: one Entra app registration federated to GitHub, RBAC on subscription + state storage, documented secrets on the `dev` environment.
+- **MCP on Azure additionally needs Microsoft Graph application roles** on that OIDC app (`Application.ReadWrite.All`, `Directory.Read.All`, `DelegatedPermissionGrant.ReadWrite.All`) so Terraform can manage Entra apps and OBO grants — Azure RBAC alone yields `403` on `azuread` data sources. See [OIDC setup Step 3b](../github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure) and [lab runbook](../../labs/mcp-on-azure/docs/run.md#github-actions-talk--meetup).
 - Local developers still need Azure CLI / OIDC-capable identity; human `azd` paths may lack roles that the Actions deployer has (seen on Hosted Agents).
 - Remote state must be shared for CI destroy to see stacks created locally - migrate local state before relying on workflow **down**.
 

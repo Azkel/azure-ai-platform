@@ -13,6 +13,8 @@ Back to the [lab README](../README.md).
 
 ## GitHub Actions (talk / meetup)
 
+The shared hostname `mcp.azure.smyk.it` is **not always online**. It is brought up for demos/talks and destroyed afterward (nightly `down` is a safety net). Outside those windows, deploy your own stack.
+
 Workflow: **MCP on Azure - demo up / down** (`.github/workflows/mcp-on-azure-demo.yml`).
 
 | Action | When |
@@ -22,7 +24,17 @@ Workflow: **MCP on Azure - demo up / down** (`.github/workflows/mcp-on-azure-dem
 
 When **up** finishes, the run log / job summary prints landing URL, MCP endpoint, and Entra tenant / client / scope.
 
-Requires the same GitHub `dev` environment secrets as Hosted Agents (`AZURE_*`, `TF_STATE_*`). The OIDC app also needs rights to create Entra app registrations and write DNS in `azure.smyk.it`.
+Requires the same GitHub `dev` environment secrets as Hosted Agents (`AZURE_*`, `TF_STATE_*`), plus DNS write on `azure.smyk.it` for the custom hostname.
+
+**Microsoft Graph app roles on the OIDC app** (required — Azure RBAC alone is not enough). Without these, `terraform apply` / `destroy` fails refreshing Entra data sources with `403 Authorization_RequestDenied`:
+
+| Application permission | Why this lab needs it |
+|------------------------|------------------------|
+| `Application.ReadWrite.All` | Create / update / delete `mcp-on-azure-<env>` app registration |
+| `Directory.Read.All` | Resolve first-party service principals (Microsoft Graph, Azure Storage) |
+| `DelegatedPermissionGrant.ReadWrite.All` | Grant Graph `User.Read` + Storage `user_impersonation` for OBO |
+
+Full grant commands: [GitHub OIDC setup — Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure).
 
 ## Local deploy
 
@@ -49,7 +61,7 @@ More Terraform detail: [terraform/README.md](../terraform/README.md).
 
 ## Connect a client
 
-1. Open the landing page (e.g. `https://mcp.azure.smyk.it/`) - no auth.
+1. Open the landing page when the demo stack is up (e.g. `https://mcp.azure.smyk.it/`) - no auth. Otherwise use your own apply URL from Terraform outputs.
 2. Copy the VS Code / Cursor `mcp.json` and start the server - Entra sign-in should prompt (OAuth via Protected Resource Metadata).
 3. Call `platform_list_blobs` (app MI) and `user_get_blob` (your identity).
 
@@ -95,9 +107,11 @@ Tool calls run as either the **workload MI** or the **signed-in caller** (OBO). 
 
 ## Teardown
 
+Prefer the GitHub **down** workflow (or nightly schedule) so remote state stays consistent. It runs `terraform/scripts/teardown.sh`, which deletes Container Apps / the CAE via Azure CLI (with RG-delete fallback) before finishing Entra + DNS with Terraform — plain `terraform destroy` often hangs on `ScheduledForDelete`.
+
 ```bash
 cd labs/mcp-on-azure/terraform
-terraform destroy
+./scripts/teardown.sh   # after init; pass the same -var flags as apply
 ```
 
-Prefer the GitHub **down** workflow (or nightly schedule) so remote state stays consistent. Storage account names are reserved for a period after delete; the lab uses a random suffix to allow recreate. Note any destroy residuals if Azure leaves orphaned links (same class of issue as Hosted Agents).
+Storage account names are reserved for a period after delete; the lab uses a random suffix to allow recreate. Note any destroy residuals if Azure leaves orphaned links (same class of issue as Hosted Agents).

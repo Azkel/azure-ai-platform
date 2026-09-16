@@ -15,6 +15,10 @@ output "container_app_name" {
   value = azurerm_container_app.mcp.name
 }
 
+output "container_app_environment_name" {
+  value = azurerm_container_app_environment.cae.name
+}
+
 output "container_app_principal_id" {
   description = "System-assigned MI of the MCP app — used by platform.* tools"
   value       = azurerm_container_app.mcp.identity[0].principal_id
