@@ -107,6 +107,16 @@ jobs:
             -var="dns_zone_name=${DNS_ZONE_NAME}" \
             -var="dns_zone_resource_group_name=${DNS_ZONE_RG}"
 
+      # azure/login's OIDC assertion is ~5 minutes; re-login before each az CLI
+      # block that can run after a long terraform/ACR gap.
+      - name: Azure login (before ACR build)
+        if: steps.meta.outputs.action == 'up'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Build and push MCP image
         if: steps.meta.outputs.action == 'up'
         working-directory: labs/mcp-on-azure
@@ -135,6 +145,14 @@ jobs:
             -var="dns_zone_resource_group_name=${DNS_ZONE_RG}" \
             -var="mcp_image=${MCP_IMAGE}"
 
+      - name: Azure login (before seed)
+        if: steps.meta.outputs.action == 'up'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Bind custom domain certificate
         if: steps.meta.outputs.action == 'up'
         run: |
@@ -153,7 +171,8 @@ jobs:
           SCOPE_ID="$(az storage account show -n "$ST" --query id -o tsv)"
           az role assignment create --assignee-object-id "$OID" --assignee-principal-type ServicePrincipal \
             --role "Storage Blob Data Contributor" --scope "$SCOPE_ID" -o none 2>/dev/null || true
-          sleep 25
+          echo "waiting for seed RBAC..."
+          sleep 45
           printf 'hello from mcp lab\n' | az storage blob upload \
             --account-name "$ST" --container-name "$CT" --name hello.txt \
             --data @- --auth-mode login --overwrite -o none
