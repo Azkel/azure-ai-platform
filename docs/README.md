@@ -58,9 +58,9 @@ This guide provides:
 The repository includes GitHub Actions workflows such as:
 
 - **Hosted Agents:** `terraform-deploy-hosted-agents.yml`, `terraform-cleanup-hosted-agents.yml` (nightly destroy)
-- **MCP on Azure:** `mcp-on-azure-demo.yml` (manual up/down + nightly destroy)
+- **MCP on Azure:** `mcp-on-azure-demo.yml` (manual up/down with CLI-first `teardown.sh` + nightly down)
 
-Workflows use Terraform with an Azure Blob backend and OIDC authentication. See each lab README for how to run them.
+Workflows use Terraform with an Azure Blob backend and OIDC authentication. MCP OIDC also needs Graph app roles plus Storage Blob Data Contributor / User Access Administrator — see [GitHub OIDC Setup](./github/github-oidc-setup.md). See each lab README for how to run them.
 ### Terraform Modules
 
 - **`labs/shared-modules/platform-core/`**: Shared infrastructure module

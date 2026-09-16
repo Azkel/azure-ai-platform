@@ -20,8 +20,8 @@ AI workloads on Azure call PaaS (Storage, Key Vault, ...). Teams often reach for
 
 ## Consequences
 
-- Clear demo narratives: list-as-app vs get-as-user (MCP); agent tools as MI (Hosted Agents).
-- Slightly more code and Entra app setup when OBO is in scope (client secret, pre-authorized clients, dual RBAC).
+- Clear demo narratives: MI lists both containers vs user OBO get (`hello.txt` OK; `mcp-platform-only` → 403) (MCP); agent tools as MI (Hosted Agents).
+- User data-plane Reader on `mcp-demo` is post-apply / demo-only (`grant-demo-blob-reader.sh`), not core Terraform.- Slightly more code and Entra app setup when OBO is in scope (client secret, pre-authorized clients, dual RBAC).
 - Operators must grant both MI roles and (when used) user data-plane roles.
 
 ## Alternatives considered

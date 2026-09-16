@@ -59,7 +59,7 @@ Ingress auth (Entra) answers **who may call MCP**. Tool auth answers **whose Azu
 | Tool group | Auth model | Downstream identity | Teaching example |
 |------------|------------|---------------------|------------------|
 | `platform.*` | Managed identity | The MCP workload | `platform_list_blobs` - list `mcp-demo` + `mcp-platform-only` |
-| `user.*` | Caller's token (OBO) | The connected user | `user_get_blob` - `hello.txt` (allowed) vs `mcp-platform-only/...` (deny) |
+| `user.*` | Caller's token (OBO) | The connected user | `user_get_blob` — `hello.txt` allowed (needs demo Reader on `mcp-demo` via `grant-demo-blob-reader.sh`); `mcp-platform-only/platform-only.txt` → 403. MI `platform_list_blobs` still lists both. |
 
 ### Slice 1 vs Acceler8it talk diagram
 

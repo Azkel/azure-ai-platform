@@ -19,12 +19,12 @@ Workflow: **MCP on Azure - demo up / down** (`.github/workflows/mcp-on-azure-dem
 
 | Action | When |
 |--------|------|
-| **up** | Before the talk - Terraform apply, ACR build, custom domain cert, seed blob |
-| **down** | After - destroy stack (also runs nightly at 21:00 UTC as a safety net) |
+| **up** | Before the talk - Terraform apply (seeds `hello.txt` + `platform-only.txt`), ACR build, bind custom domain cert (may stay Disabled), optional `grant-demo-blob-reader.sh` |
+| **down** | After - CLI-first CAE teardown then Terraform destroy (also runs nightly at 21:00 UTC as a safety net) |
 
-When **up** finishes, the run log / job summary prints landing URL, MCP endpoint, and Entra tenant / client / scope.
+When **up** finishes, the run log / job summary prints landing URL, MCP endpoint, and Entra tenant / client / scope. If `mcp.azure.smyk.it` TLS fails (cert **Disabled**), use the default Container Apps FQDN from outputs.
 
-Requires the same GitHub `dev` environment secrets as Hosted Agents (`AZURE_*`, `TF_STATE_*`), plus DNS write on `azure.smyk.it` for the custom hostname.
+Requires the same GitHub `dev` environment secrets as Hosted Agents (`AZURE_*`, `TF_STATE_*`), plus DNS write on `azure.smyk.it` for the custom hostname. Optional repo/env variable `DEMO_BLOB_READER_OBJECT_IDS` (comma-separated Entra object IDs) grants meetup callers Reader on `mcp-demo` only.
 
 **Microsoft Graph app roles on the OIDC app** (required — Azure RBAC alone is not enough). Without these, `terraform apply` / `destroy` fails refreshing Entra data sources with `403 Authorization_RequestDenied`:
 
@@ -34,7 +34,7 @@ Requires the same GitHub `dev` environment secrets as Hosted Agents (`AZURE_*`, 
 | `Directory.Read.All` | Resolve first-party service principals (Microsoft Graph, Azure Storage) |
 | `DelegatedPermissionGrant.ReadWrite.All` | Grant Graph `User.Read` + Storage `user_impersonation` for OBO |
 
-Also grant Azure RBAC **`Storage Blob Data Contributor`** (and ideally **`User Access Administrator`**) on the subscription to the same OIDC app — control-plane **Contributor** cannot seed blobs or create data-plane role assignments. See [OIDC setup Step 3c](../../../docs/github/github-oidc-setup.md#step-3c-storage-data-plane--role-assignment-rights-mcp-on-azure).
+Also grant Azure RBAC **`Storage Blob Data Contributor`** and **`User Access Administrator`** on the subscription to the same OIDC app — control-plane **Contributor** cannot seed blobs or create data-plane role assignments. See [OIDC setup Step 3c](../../../docs/github/github-oidc-setup.md#step-3c-storage-data-plane--role-assignment-rights-mcp-on-azure).
 
 Full Graph grant commands: [GitHub OIDC setup — Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure).
 
@@ -54,6 +54,9 @@ az acr build -r <acr_name> -g <rg> -t mcp-on-azure:0.1.6 ../src
 
 # custom domain: after first hostname create, bind managed cert
 ./scripts/bind-custom-domain.sh
+# if cert stays Disabled, use default CA FQDN from terraform output mcp_default_fqdn
+
+./scripts/grant-demo-blob-reader.sh   # demo-only mcp-demo Reader for user_get_blob
 
 cd ..
 ./demo.sh
@@ -110,7 +113,7 @@ MCP_SCOPE='https://mcp.azure.smyk.it/mcp/access_as_user' \
 ./demo.sh
 ```
 
-Checks: health → unauthenticated 401 → token → list (MI) → get `hello.txt` (OBO) → optional deny on platform-only if that blob is seeded.
+Checks: health → unauthenticated 401 → token → list (MI, both containers) → get `hello.txt` (OBO) → deny/403 on `mcp-platform-only/platform-only.txt`.
 
 ## Audit note
 

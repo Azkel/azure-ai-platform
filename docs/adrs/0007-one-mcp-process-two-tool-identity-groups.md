@@ -17,7 +17,7 @@ The Acceler8it narrative contrasts **platform credentials** vs **user credential
 2. **Expose two tool groups on that server:**
    - `platform_*` - workload managed identity only
    - `user_*` - caller Bearer token → OBO to the tool target
-3. **Use one Storage account with intentional RBAC asymmetry** (e.g. shared `mcp-demo` vs MI-only `mcp-platform-only`) so list-as-app vs get-as-user (and deny) is visible in one demo.
+3. **Use one Storage account with intentional RBAC asymmetry** (shared `mcp-demo` vs MI-only `mcp-platform-only`) so MI can list both while user OBO get returns **403** on platform-only — visible in one demo.
 4. **Do not deploy a second "user MCP" app** for Slice 1.
 
 ## Consequences

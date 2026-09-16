@@ -121,7 +121,7 @@ Azure **Contributor** cannot grant itself `Storage Blob Data *` roles. The OIDC 
 
 | Role | Why |
 |---|---|
-| `Storage Blob Data Contributor` | Upload `hello.txt` / `platform-only.txt` (workflow seed or `azurerm_storage_blob`) |
+| `Storage Blob Data Contributor` | Create/update demo blobs (`azurerm_storage_blob` primary; workflow may re-upload) |
 | `User Access Administrator` | Create `azurerm_role_assignment` resources (MI reader, extra demo readers) |
 
 ```bash

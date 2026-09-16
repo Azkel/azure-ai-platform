@@ -13,17 +13,19 @@ Remote state uses the shared lab backend (see `backend.hcl.example`). GitHub Act
 - `terraform.tfvars` from `terraform.tfvars.example` (gitignored)
 - `backend.hcl` from `backend.hcl.example` (or `-backend-config` flags)
 
-### GitHub Actions OIDC (Graph)
+### GitHub Actions OIDC (Graph + data-plane)
 
-The Actions deployer needs **Microsoft Graph application permissions**, not only Azure RBAC. Hosted Agents can deploy with Contributor + state storage; this lab also manages Entra apps and delegated grants via the `azuread` provider.
+The Actions deployer needs **Microsoft Graph application permissions** and Azure **data-plane / authorization** roles — not only Contributor. Hosted Agents can deploy with Contributor + state storage; this lab also manages Entra apps, seeds blobs, and assigns RBAC via the `azuread` / `azurerm` providers.
 
-| Application permission | Purpose |
-|------------------------|---------|
-| `Application.ReadWrite.All` | Lab app registration lifecycle |
-| `Directory.Read.All` | Look up Graph / Storage service principals |
-| `DelegatedPermissionGrant.ReadWrite.All` | OBO consent grants (`User.Read`, Storage `user_impersonation`) |
+| Permission / role | Purpose |
+|-------------------|---------|
+| `Application.ReadWrite.All` (Graph) | Lab app registration lifecycle |
+| `Directory.Read.All` (Graph) | Look up Graph / Storage service principals |
+| `DelegatedPermissionGrant.ReadWrite.All` (Graph) | OBO consent grants (`User.Read`, Storage `user_impersonation`) |
+| `Storage Blob Data Contributor` (Azure RBAC) | Seed / manage `azurerm_storage_blob` demo content |
+| `User Access Administrator` (Azure RBAC) | Create role assignments (MI reader, demo Reader script) |
 
-Missing these shows up as `403` on `data.azuread_service_principal.*` during plan/apply/destroy. How to grant: [OIDC setup Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure) · also summarized in [docs/run.md](../docs/run.md#github-actions-talk--meetup).
+Missing Graph roles show up as `403` on `data.azuread_service_principal.*`. Missing Blob Data Contributor fails seed uploads. Grants: [OIDC Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure) · [Step 3c](../../../docs/github/github-oidc-setup.md#step-3c-storage-data-plane--role-assignment-rights-mcp-on-azure) · [docs/run.md](../docs/run.md#github-actions-talk--meetup).
 
 ## Apply (local)
 
@@ -42,6 +44,10 @@ After the first custom-domain create, bind the managed cert:
 ```bash
 ./scripts/bind-custom-domain.sh
 ```
+
+If the cert stays **Disabled**, the stack is still reachable on the default Container Apps FQDN (`terraform output mcp_default_fqdn`).
+
+Apply also creates demo blobs via Terraform: `mcp-demo/hello.txt` and `mcp-platform-only/platform-only.txt`.
 
 ## Entra
 

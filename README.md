@@ -25,7 +25,7 @@ Platform patterns first (identity, IaC, CI/CD, observability); agents and MCP ar
 | Lab | Status | Description |
 |-----|--------|-------------|
 | [Hosted Agents](./labs/hosted-agents/) | Demoable v1 | Azure AI Foundry Hosted Agents infrastructure lab - platform foundation for AI workloads with Terraform, GitHub Actions, and Microsoft Foundry. |
-| [MCP on Azure](./labs/mcp-on-azure/) | Demoable v1 | MCP on Container Apps + Entra - platform vs user tool identity, VNet/PE, Terraform + .NET. Acceler8it 2026 follow-up. |
+| [MCP on Azure](./labs/mcp-on-azure/) | Demoable v1 | MCP on Container Apps + Entra - platform vs user tool identity (deny demo), VNet/PE, ephemeral up/down via Actions. Acceler8it 2026 follow-up. |
 
 More labs will appear here as they ship. Each stands alone; the repo grows with learning, not upfront scaffolding.
 
