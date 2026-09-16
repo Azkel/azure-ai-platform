@@ -76,6 +76,68 @@ az role assignment create \
   --scope "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/rg-tfstate/providers/Microsoft.Storage/storageAccounts/$STORAGE_ACCOUNT"
 ```
 
+### Step 3b: Microsoft Graph app roles (MCP on Azure)
+
+The MCP lab Terraform manages Entra app registrations and delegated grants. The OIDC app needs these **application** permissions on Microsoft Graph (admin consent / app role assignments), not only Azure RBAC:
+
+| Permission | Why |
+|---|---|
+| `Application.ReadWrite.All` | Create/update/delete the lab app registration |
+| `Directory.Read.All` | Resolve first-party service principals (Graph, Storage) |
+| `DelegatedPermissionGrant.ReadWrite.All` | Grant User.Read + Storage `user_impersonation` for OBO |
+
+```bash
+APP_ID="YOUR_APP_ID_FROM_STEP_1"
+SP_OID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
+GRAPH_SP=$(az ad sp show --id 00000003-0000-0000-c000-000000000000 --query id -o tsv)
+APP_OID=$(az ad app show --id "$APP_ID" --query id -o tsv)
+
+# Declare required resource access on the app
+az rest --method PATCH --uri "https://graph.microsoft.com/v1.0/applications/$APP_OID" \
+  --headers "Content-Type=application/json" \
+  --body '{"requiredResourceAccess":[{"resourceAppId":"00000003-0000-0000-c000-000000000000","resourceAccess":[
+    {"id":"e1fe6dd8-ba31-4d61-89e7-88639da4683d","type":"Scope"},
+    {"id":"1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9","type":"Role"},
+    {"id":"7ab1d382-f21e-4acd-a863-ba3e13f7da61","type":"Role"},
+    {"id":"8e8e4742-1d95-4f68-9d56-6ee75648c72a","type":"Role"}
+  ]}]}'
+
+# Assign the application roles (tenant admin consent equivalent for Roles)
+for ROLE in \
+  1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9 \
+  7ab1d382-f21e-4acd-a863-ba3e13f7da61 \
+  8e8e4742-1d95-4f68-9d56-6ee75648c72a
+do
+  az rest --method POST \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$SP_OID/appRoleAssignments" \
+    --headers "Content-Type=application/json" \
+    --body "{\"principalId\":\"$SP_OID\",\"resourceId\":\"$GRAPH_SP\",\"appRoleId\":\"$ROLE\"}"
+done
+```
+
+### Step 3c: Storage data-plane + role assignment rights (MCP on Azure)
+
+Azure **Contributor** cannot grant itself `Storage Blob Data *` roles. The OIDC app needs these Azure RBAC assignments (subscription or lab RG scope) so GitHub Actions can seed demo blobs and manage data-plane role assignments:
+
+| Role | Why |
+|---|---|
+| `Storage Blob Data Contributor` | Create/update demo blobs (`azurerm_storage_blob` primary; workflow may re-upload) |
+| `User Access Administrator` | Create `azurerm_role_assignment` resources (MI reader, extra demo readers) |
+
+```bash
+APP_ID="YOUR_APP_ID_FROM_STEP_1"
+SP_OID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
+SUB=$(az account show --query id -o tsv)
+
+az role assignment create --assignee-object-id "$SP_OID" --assignee-principal-type ServicePrincipal \
+  --role "Storage Blob Data Contributor" --scope "/subscriptions/$SUB"
+
+az role assignment create --assignee-object-id "$SP_OID" --assignee-principal-type ServicePrincipal \
+  --role "User Access Administrator" --scope "/subscriptions/$SUB"
+```
+
+Without `Storage Blob Data Contributor`, seed fails with “You do not have the required permissions… Storage Blob Data Contributor” even though control-plane apply succeeded.
+
 ### Step 4: Configure GitHub Secrets
 
 Add these secrets to your GitHub repository:

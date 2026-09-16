@@ -1,0 +1,94 @@
+<style>
+:root {
+  color-scheme: light;
+  --fg: #1a1a1a;
+  --muted: #555;
+  --border: #d0d0d0;
+  --bg: #f7f8f8;
+  --code: #f0f0f0;
+  --accent: #0b5fff;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+
+main {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.35rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 1.75rem 0 0.5rem;
+}
+
+p,
+li {
+  color: var(--muted);
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  margin: 0.75rem 0;
+}
+
+code,
+pre {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+pre {
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.35rem 0.75rem;
+  align-items: start;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+.ok {
+  color: #0a7a32;
+  font-weight: 600;
+}
+
+button.copy {
+  float: right;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+}
+</style>

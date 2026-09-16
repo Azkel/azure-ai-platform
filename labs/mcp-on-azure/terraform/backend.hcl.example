@@ -1,0 +1,11 @@
+# Example remote state config (shared lab backend).
+# Copy to backend.hcl (gitignored) or pass -backend-config flags.
+#
+#   terraform init -migrate-state \
+#     -backend-config=backend.hcl
+
+resource_group_name  = "rg-tfstate"
+storage_account_name = "sa0tfstatemsmyk0dev0plc"
+container_name       = "state"
+key                  = "mcp-on-azure-dev.tfstate"
+use_azuread_auth     = true
