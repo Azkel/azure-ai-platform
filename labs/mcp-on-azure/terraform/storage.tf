@@ -90,3 +90,22 @@ resource "azurerm_role_assignment" "extra_storage_readers" {
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = each.value
 }
+
+# Demo seed blobs (CI/local apply). Requires the applying identity to already have
+# Storage Blob Data Contributor (OIDC app: grant at subscription scope — Contributor
+# alone cannot self-assign data-plane roles).
+resource "azurerm_storage_blob" "hello" {
+  name                   = "hello.txt"
+  storage_account_name   = azurerm_storage_account.demo.name
+  storage_container_name = azurerm_storage_container.demo.name
+  type                   = "Block"
+  source_content         = "hello from mcp lab\n"
+}
+
+resource "azurerm_storage_blob" "platform_only" {
+  name                   = "platform-only.txt"
+  storage_account_name   = azurerm_storage_account.demo.name
+  storage_container_name = azurerm_storage_container.platform_only.name
+  type                   = "Block"
+  source_content         = "platform identity only — user.* should get 403\n"
+}

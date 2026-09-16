@@ -115,6 +115,29 @@ do
 done
 ```
 
+### Step 3c: Storage data-plane + role assignment rights (MCP on Azure)
+
+Azure **Contributor** cannot grant itself `Storage Blob Data *` roles. The OIDC app needs these Azure RBAC assignments (subscription or lab RG scope) so GitHub Actions can seed demo blobs and manage data-plane role assignments:
+
+| Role | Why |
+|---|---|
+| `Storage Blob Data Contributor` | Upload `hello.txt` / `platform-only.txt` (workflow seed or `azurerm_storage_blob`) |
+| `User Access Administrator` | Create `azurerm_role_assignment` resources (MI reader, extra demo readers) |
+
+```bash
+APP_ID="YOUR_APP_ID_FROM_STEP_1"
+SP_OID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
+SUB=$(az account show --query id -o tsv)
+
+az role assignment create --assignee-object-id "$SP_OID" --assignee-principal-type ServicePrincipal \
+  --role "Storage Blob Data Contributor" --scope "/subscriptions/$SUB"
+
+az role assignment create --assignee-object-id "$SP_OID" --assignee-principal-type ServicePrincipal \
+  --role "User Access Administrator" --scope "/subscriptions/$SUB"
+```
+
+Without `Storage Blob Data Contributor`, seed fails with “You do not have the required permissions… Storage Blob Data Contributor” even though control-plane apply succeeded.
+
 ### Step 4: Configure GitHub Secrets
 
 Add these secrets to your GitHub repository:

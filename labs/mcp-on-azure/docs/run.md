@@ -34,7 +34,9 @@ Requires the same GitHub `dev` environment secrets as Hosted Agents (`AZURE_*`, 
 | `Directory.Read.All` | Resolve first-party service principals (Microsoft Graph, Azure Storage) |
 | `DelegatedPermissionGrant.ReadWrite.All` | Grant Graph `User.Read` + Storage `user_impersonation` for OBO |
 
-Full grant commands: [GitHub OIDC setup — Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure).
+Also grant Azure RBAC **`Storage Blob Data Contributor`** (and ideally **`User Access Administrator`**) on the subscription to the same OIDC app — control-plane **Contributor** cannot seed blobs or create data-plane role assignments. See [OIDC setup Step 3c](../../../docs/github/github-oidc-setup.md#step-3c-storage-data-plane--role-assignment-rights-mcp-on-azure).
+
+Full Graph grant commands: [GitHub OIDC setup — Step 3b](../../../docs/github/github-oidc-setup.md#step-3b-microsoft-graph-app-roles-mcp-on-azure).
 
 ## Local deploy
 

@@ -164,21 +164,32 @@ jobs:
         if: steps.meta.outputs.action == 'up'
         run: |
           set -euo pipefail
+          # Prefer Terraform-managed blobs (azurerm_storage_blob); this step overwrites
+          # in case apply skipped content. Needs Storage Blob Data Contributor on the
+          # OIDC app (Contributor alone is not enough — see OIDC setup Step 3c).
           ST="$(terraform output -raw storage_account_name)"
           CT="$(terraform output -raw storage_container_name)"
           CT_PO="$(terraform output -raw storage_platform_only_container_name)"
-          OID="$(az ad sp show --id "${ARM_CLIENT_ID}" --query id -o tsv)"
-          SCOPE_ID="$(az storage account show -n "$ST" --query id -o tsv)"
-          az role assignment create --assignee-object-id "$OID" --assignee-principal-type ServicePrincipal \
-            --role "Storage Blob Data Contributor" --scope "$SCOPE_ID" -o none 2>/dev/null || true
-          echo "waiting for seed RBAC..."
-          sleep 45
-          printf 'hello from mcp lab\n' | az storage blob upload \
-            --account-name "$ST" --container-name "$CT" --name hello.txt \
-            --data @- --auth-mode login --overwrite -o none
-          printf 'platform identity only — user.* should get 403\n' | az storage blob upload \
-            --account-name "$ST" --container-name "$CT_PO" --name platform-only.txt \
-            --data @- --auth-mode login --overwrite -o none
+          upload() {
+            local container="$1" name="$2" content="$3"
+            local attempt=1
+            while true; do
+              if printf '%s' "$content" | az storage blob upload \
+                --account-name "$ST" --container-name "$container" --name "$name" \
+                --data @- --auth-mode login --overwrite -o none; then
+                return 0
+              fi
+              if [[ "$attempt" -ge 5 ]]; then
+                echo "blob upload failed after ${attempt} attempts: ${container}/${name}"
+                return 1
+              fi
+              echo "upload retry ${attempt}/5 in 20s..."
+              sleep 20
+              attempt=$((attempt + 1))
+            done
+          }
+          upload "$CT" "hello.txt" $'hello from mcp lab\n'
+          upload "$CT_PO" "platform-only.txt" $'platform identity only — user.* should get 403\n'
 
       - name: Print demo URL
         if: steps.meta.outputs.action == 'up'
