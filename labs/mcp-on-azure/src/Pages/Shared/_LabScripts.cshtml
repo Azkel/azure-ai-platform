@@ -1,0 +1,15 @@
+<script>
+document.querySelectorAll("button.copy").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const id = btn.getAttribute("data-copy");
+    const el = id ? document.getElementById(id) : null;
+    if (!el) return;
+
+    await navigator.clipboard.writeText(el.innerText);
+    btn.textContent = "Copied";
+    setTimeout(() => {
+      btn.textContent = "Copy";
+    }, 1500);
+  });
+});
+</script>

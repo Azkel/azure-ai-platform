@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# Never commit real subscription IDs or secrets to the public repo.
+
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Optional: your Entra object ID so user.* can read mcp-demo/hello.txt (container-scoped).
+# Does NOT grant mcp-platform-only — that stays MI-only for the deny demo.
+# additional_storage_blob_data_reader_principal_ids = ["xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"]
+
+# After first docker / acr build:
+# mcp_image = "acrmcponazuredevweu.azurecr.io/mcp-on-azure:0.1.0"
+
+# Optional custom domain on an existing public DNS zone:
+# custom_hostname              = "mcp.azure.smyk.it"
+# dns_zone_name                = "azure.smyk.it"
+# dns_zone_resource_group_name = "rg-shared-plc-prod"
+
+location    = "westeurope"
+environment = "dev"

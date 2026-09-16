@@ -1,0 +1,20 @@
+# Local Terraform values (subscription, Entra app ids)
+*.tfvars
+!terraform.tfvars.example
+backend.hcl
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+tfplan*
+
+# .NET
+bin/
+obj/
+*.user
+
+# Local secrets
+.env
+.env.*

@@ -6,17 +6,23 @@ This directory contains **global documentation** for setting up and using the Az
 
 ### Global Documentation (this directory)
 ```
-.
-├── README.md                          # This file - You are here
+docs/
+├── README.md
+├── adrs/                              # Architecture Decision Records
 ├── github/
-│   └── github-oidc-setup.md          # GitHub OIDC authentication setup
+│   └── github-oidc-setup.md
 └── infrastructure/
-    └── terraform-backend-setup.md    # Terraform backend storage setup
+    └── terraform-backend-setup.md
 ```
+
+### Architecture decisions
+
+→ [ADRs index](./adrs/README.md) (OIDC/state, module strategy, MI/OBO, PE, MCP ingress, ...)
 
 ### Lab-Specific Documentation
 Each lab has its own documentation:
 - [Hosted Agents Lab](../../labs/hosted-agents/README.md) - Lab overview and usage
+- [MCP on Azure](../../labs/mcp-on-azure/README.md) - Short start + `docs/` detail pages
 - [Platform Core Module](../../labs/shared-modules/platform-core/README.md) - Shared module documentation
 
 See the [main README](../../README.md) for a complete list of all labs.
@@ -49,17 +55,12 @@ This guide provides:
 
 ### GitHub Actions Workflows
 
-The repository includes two main GitHub Actions workflows:
+The repository includes GitHub Actions workflows such as:
 
-- **`terraform-deploy-hosted-agents.yml`**: Deploy infrastructure with plan/apply/destroy actions
-- **`terraform-cleanup-hosted-agents.yml`**: Automatically destroy resources daily at 9 PM UTC
+- **Hosted Agents:** `terraform-deploy-hosted-agents.yml`, `terraform-cleanup-hosted-agents.yml` (nightly destroy)
+- **MCP on Azure:** `mcp-on-azure-demo.yml` (manual up/down + nightly destroy)
 
-Both workflows:
-- Use Terraform with Azure Blob Storage backend
-- Support multiple environments (dev, staging, prod)
-- Use consistent resource naming
-- Support OIDC authentication
-
+Workflows use Terraform with an Azure Blob backend and OIDC authentication. See each lab README for how to run them.
 ### Terraform Modules
 
 - **`labs/shared-modules/platform-core/`**: Shared infrastructure module

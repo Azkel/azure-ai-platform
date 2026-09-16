@@ -4,7 +4,7 @@
 
 Small, practical labs exploring **Platform Engineering for AI-native systems** on Azure.
 
-Public reference and learning project — not a commercial product.
+Public reference and learning project - not a commercial product.
 
 **Author:** [Michał Smyk](https://smyk.it/)
 
@@ -12,11 +12,11 @@ Public reference and learning project — not a commercial product.
 
 ## What this is
 
-Umbrella repository for **shippable labs** — build, learn, document, share. Each lab stands alone; the repo grows as learning progresses.
+Umbrella repository for **shippable labs** - build, learn, document, share. Each lab stands alone; the repo grows as learning progresses.
 
 Platform patterns first (identity, IaC, CI/CD, observability); agents and MCP are workloads on that foundation. Labs ship **runnable reference paths** on Azure; the portable idea is the pattern, not a mandate for those exact services.
 
-**Status:** first lab is **Demoable v1** — more labs ship as learning progresses.
+**Status:** two labs at **Demoable v1** - more ship as learning progresses.
 
 ---
 
@@ -24,8 +24,8 @@ Platform patterns first (identity, IaC, CI/CD, observability); agents and MCP ar
 
 | Lab | Status | Description |
 |-----|--------|-------------|
-| [Hosted Agents](./labs/hosted-agents/) | Demoable v1 | Azure AI Foundry Hosted Agents infrastructure lab — demonstrates platform foundation for AI workloads with Terraform, GitHub Actions, and Microsoft Foundry integration. |
-| [MCP on Azure](./labs/mcp-on-azure/) | On hold | Pattern-first reference lab — safe MCP on a platform (ingress, isolation, workload vs user identity, read-only tools). Runnable Container Apps path; concerns map to AKS, APIM, and other stacks. |
+| [Hosted Agents](./labs/hosted-agents/) | Demoable v1 | Azure AI Foundry Hosted Agents infrastructure lab - platform foundation for AI workloads with Terraform, GitHub Actions, and Microsoft Foundry. |
+| [MCP on Azure](./labs/mcp-on-azure/) | Demoable v1 | MCP on Container Apps + Entra - platform vs user tool identity, VNet/PE, Terraform + .NET. Acceler8it 2026 follow-up. |
 
 More labs will appear here as they ship. Each stands alone; the repo grows with learning, not upfront scaffolding.
 
@@ -64,7 +64,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+MIT - see [`LICENSE`](./LICENSE).
 
 ---
 

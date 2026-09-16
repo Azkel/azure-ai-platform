@@ -20,6 +20,9 @@ tfplan*
 # Local azd / deploy logs
 *.log
 
+# Local Azure CLI / tool caches (never publish)
+.tmp-azure/
+
 # .NET
 bin/
 obj/

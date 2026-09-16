@@ -1,0 +1,67 @@
+@page
+@model McpOnAzure.Pages.IndexModel
+@{
+    Layout = null;
+    var c = Model.Config;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP on Azure - lab config</title>
+  <partial name="_LabStyles" />
+</head>
+<body>
+<main>
+  <h1>MCP on Azure</h1>
+  <p>Lab endpoint for the meetup demo. Add the config below in VS Code - it should prompt you to sign in with Microsoft Entra.</p>
+
+  <div class="card">
+    <div class="row"><div class="label">MCP URL</div><div><code>@c.McpUrl</code></div></div>
+    <div class="row"><div class="label">Resource</div><div><code>@c.Resource</code></div></div>
+    <div class="row"><div class="label">Tenant ID</div><div><code>@c.TenantId</code></div></div>
+    <div class="row"><div class="label">Client ID</div><div><code>@c.ClientId</code></div></div>
+    <div class="row"><div class="label">Scope</div><div><code>@c.Scope</code></div></div>
+    <div class="row"><div class="label">PRM</div><div><a href="@c.PrmUrl"><code>@c.PrmUrl</code></a></div></div>
+    <div class="row">
+      <div class="label">Tools</div>
+      <div>
+        <code>platform_list_blobs</code> (app MI) ·
+        <code>user_get_blob</code> (caller / OBO) - try <code>hello.txt</code> vs <code>mcp-platform-only/platform-only.txt</code>
+      </div>
+    </div>
+  </div>
+
+  <h2>1. VS Code / Cursor - <code>mcp.json</code></h2>
+  <div class="card">
+    <button class="copy" type="button" data-copy="vscode">Copy</button>
+    <pre id="vscode">@c.VsCodeMcpJson</pre>
+    <p>
+      VS Code: <code>.vscode/mcp.json</code> ·
+      Cursor: MCP settings / project <code>mcp.json</code>.
+      Start the server - you should get an Entra sign-in prompt (OAuth via Protected Resource Metadata).
+    </p>
+  </div>
+
+  <h2>2. Fallback - CLI token</h2>
+  <div class="card">
+    <button class="copy" type="button" data-copy="token">Copy</button>
+    <pre id="token">@c.TokenCommand</pre>
+    <p>
+      If interactive login fails, <code>az login</code> then paste the token as
+      <code>Authorization: Bearer ...</code> (or use a client that supports header inputs).
+    </p>
+  </div>
+
+  <h2>3. Quick checks</h2>
+  <ul>
+    <li>Unauthenticated <code>POST /mcp</code> → <span class="ok">401</span> with <code>WWW-Authenticate</code> + <code>resource_metadata</code></li>
+    <li>Anonymous <a href="@c.PrmUrl"><code>/.well-known/oauth-protected-resource</code></a> → PRM JSON</li>
+    <li>Authenticated tools: list blobs (platform MI sees both containers), get <code>hello.txt</code> (your identity), get <code>mcp-platform-only/platform-only.txt</code> (expect deny)</li>
+    <li>Machine-readable: <a href="/config.json"><code>/config.json</code></a> · probe: <a href="/health"><code>/health</code></a></li>
+  </ul>
+</main>
+<partial name="_LabScripts" />
+</body>
+</html>
